@@ -16,6 +16,7 @@ jobs:
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
+        id: setup-java
         with:
           distribution: temurin
           java-version: 21
@@ -26,6 +27,8 @@ jobs:
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.path }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
