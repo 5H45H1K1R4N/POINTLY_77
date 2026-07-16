@@ -16,6 +16,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
 
       - name: Verify Java
         run: |
@@ -23,3 +24,9 @@ jobs:
           java -version
           javac -version
           which java
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Verify Gradle Wrapper
+        run: ./gradlew --version
