@@ -8,22 +8,10 @@ import com.google.firebase.FirebaseOptions
 class PointlyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        try {
-            // Try default initialization first (from google-services.json)
-            val app = FirebaseApp.initializeApp(this)
-            if (app == null) {
-                Log.w("PointlyApplication", "Default FirebaseApp initialization returned null. Using programmatic options.")
-                initializeFallback()
-            } else {
-                Log.d("PointlyApplication", "FirebaseApp initialized successfully with default options.")
-            }
-        } catch (e: Exception) {
-            Log.w("PointlyApplication", "Default FirebaseApp initialization failed: ${e.message}. Using programmatic options.")
-            initializeFallback()
-        }
+        initializeFirebase()
     }
 
-    private fun initializeFallback() {
+    private fun initializeFirebase() {
         try {
             val options = FirebaseOptions.Builder()
                 .setApiKey("AIzaSyAItra9SH3n6JoD-fX9_iBargRh7_eoej4")
@@ -32,10 +20,22 @@ class PointlyApplication : Application() {
                 .setDatabaseUrl("https://pointly77-default-rtdb.firebaseio.com")
                 .setStorageBucket("pointly77.firebasestorage.app")
                 .build()
+
+            val apps = FirebaseApp.getApps(this)
+            if (apps.isNotEmpty()) {
+                Log.d("PointlyApplication", "FirebaseApp default instance already exists. Re-initializing to ensure correct options.")
+                try {
+                    val existingApp = FirebaseApp.getInstance()
+                    existingApp.delete()
+                } catch (e: Exception) {
+                    Log.e("PointlyApplication", "Error deleting existing FirebaseApp instance", e)
+                }
+            }
+
             FirebaseApp.initializeApp(this, options)
-            Log.d("PointlyApplication", "FirebaseApp initialized successfully with user provided options.")
-        } catch (fallbackEx: Exception) {
-            Log.e("PointlyApplication", "User FirebaseApp initialization failed", fallbackEx)
+            Log.d("PointlyApplication", "FirebaseApp initialized successfully with correct programmatic options.")
+        } catch (e: Exception) {
+            Log.e("PointlyApplication", "FirebaseApp initialization failed", e)
         }
     }
 }

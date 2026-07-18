@@ -258,9 +258,10 @@ class CommunityRepository(
         title: String,
         description: String,
         category: String,
-        fileUrl: String
+        fileUrl: String,
+        postId: String? = null
     ) {
-        val postId = db.collection("showcase").document().id
+        val finalPostId = postId ?: db.collection("showcase").document().id
         val data = mapOf(
             "authorUid" to authorUid,
             "authorName" to authorName,
@@ -276,7 +277,7 @@ class CommunityRepository(
             "reportedBy" to "",
             "timestamp" to System.currentTimeMillis()
         )
-        db.collection("showcase").document(postId).set(data).await()
+        db.collection("showcase").document(finalPostId).set(data).await()
 
         createFeedItem(
             uid = authorUid,

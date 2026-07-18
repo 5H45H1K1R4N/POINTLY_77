@@ -26,7 +26,7 @@ import androidx.room.RoomDatabase
         ShopItemEntity::class,
         AiCacheEntity::class
     ],
-    version = 9,
+    version = 12,
     exportSchema = false
 )
 abstract class PointlyDatabase : RoomDatabase() {
@@ -43,7 +43,7 @@ abstract class PointlyDatabase : RoomDatabase() {
                     PointlyDatabase::class.java,
                     "pointly_database"
                 )
-                .fallbackToDestructiveMigration(true)
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance

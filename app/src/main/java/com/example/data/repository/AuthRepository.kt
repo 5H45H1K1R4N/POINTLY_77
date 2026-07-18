@@ -42,7 +42,17 @@ class AuthRepository(
         className: String,
         section: String,
         school: String = "",
-        profileImage: String? = null
+        profileImage: String? = null,
+        isTeacher: Boolean = false,
+        employeeId: String = "",
+        subjects: String = "",
+        classesAssigned: String = "",
+        sectionsAssigned: String = "",
+        isAdmin: Boolean = false,
+        adminId: String = "",
+        organizationId: String = "",
+        permissions: String = "",
+        adminRole: String = ""
     ): Result<FirebaseUser> = withContext(Dispatchers.IO) {
         try {
             val generatedEmail = "${username.lowercase().trim()}@pointly77.app"
@@ -78,6 +88,16 @@ class AuthRepository(
                 totalStudyTime = 0,
                 studyMinutes = 0,
                 quizAccuracy = 0,
+                isTeacher = isTeacher,
+                employeeId = employeeId,
+                subjects = subjects,
+                classesAssigned = classesAssigned,
+                sectionsAssigned = sectionsAssigned,
+                isAdmin = isAdmin,
+                adminId = adminId,
+                organizationId = organizationId,
+                permissions = permissions,
+                adminRole = adminRole,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
@@ -95,7 +115,22 @@ class AuthRepository(
                     rank = 10,
                     title = "Bronze Tier",
                     weeklyStudyHours = 0.0f,
-                    weeklyGoalHours = 10.0f
+                    weeklyGoalHours = 10.0f,
+                    username = username.trim(),
+                    className = className,
+                    section = section,
+                    school = school,
+                    profileImage = avatarUrl,
+                    isTeacher = isTeacher,
+                    employeeId = employeeId,
+                    subjects = subjects,
+                    classesAssigned = classesAssigned,
+                    sectionsAssigned = sectionsAssigned,
+                    isAdmin = isAdmin,
+                    adminId = adminId,
+                    organizationId = organizationId,
+                    permissions = permissions,
+                    adminRole = adminRole
                 )
             )
 
@@ -154,6 +189,22 @@ class AuthRepository(
                 title = if (userDoc.xp > 2000) "Gold Tier" else if (userDoc.xp > 1000) "Silver Tier" else "Bronze Tier",
                 weeklyStudyHours = currentLocal?.weeklyStudyHours ?: 0.0f,
                 weeklyGoalHours = currentLocal?.weeklyGoalHours ?: 10.0f,
+                username = userDoc.username.ifEmpty { currentLocal?.username ?: "john_doe" },
+                className = userDoc.className.ifEmpty { currentLocal?.className ?: "Class 8" },
+                section = userDoc.section.ifEmpty { currentLocal?.section ?: "A" },
+                school = userDoc.school.ifEmpty { currentLocal?.school ?: "Bento International School" },
+                profileImage = userDoc.profileImage.ifEmpty { currentLocal?.profileImage ?: "https://api.dicebear.com/7.x/adventurer/svg?seed=Quest" },
+                totalStudyHours = userDoc.totalStudyTime.toFloat(),
+                isTeacher = userDoc.isTeacher,
+                employeeId = userDoc.employeeId,
+                subjects = userDoc.subjects,
+                classesAssigned = userDoc.classesAssigned,
+                sectionsAssigned = userDoc.sectionsAssigned,
+                isAdmin = userDoc.isAdmin,
+                adminId = userDoc.adminId,
+                organizationId = userDoc.organizationId,
+                permissions = userDoc.permissions,
+                adminRole = userDoc.adminRole,
                 updatedAt = userDoc.updatedAtLong
             )
             dao.insertProfile(profile)

@@ -56,7 +56,16 @@ class PointlyRepository(
                     rank = 4,
                     title = "Gold Tier",
                     weeklyStudyHours = 15.0f,
-                    weeklyGoalHours = 20.0f
+                    weeklyGoalHours = 20.0f,
+                    username = "john_doe",
+                    className = "Class 8",
+                    section = "A",
+                    school = "Bento International School",
+                    board = "CBSE",
+                    bio = "Excelsior! Curious mind dedicated to constant learning and gamified focus. 🚀",
+                    joinDate = "July 17, 2026",
+                    totalStudyHours = 58.0f,
+                    profileImage = "https://api.dicebear.com/7.x/adventurer/svg?seed=Quest"
                 )
             )
 
@@ -461,9 +470,24 @@ class PointlyRepository(
     }
 
     /**
-     * Fetch study quiz content from Gemini API or fallback to mock data.
+     * Fetch study quiz content from Gemini API or fallback to mock data. Check local cache first.
      */
     suspend fun generateQuiz(topic: String, subject: String): QuizResponse = withContext(Dispatchers.IO) {
+        val cacheKey = "quiz_${subject.trim().lowercase()}_${topic.trim().lowercase()}"
+        val cachedResponse = getAiCache(cacheKey)
+        if (cachedResponse != null) {
+            Log.d("PointlyRepository", "AI Cache hit for topic: $topic. Returning cached quiz.")
+            try {
+                val adapter = RetrofitClient.moshiInstance.adapter(QuizResponse::class.java)
+                val cachedQuiz = adapter.fromJson(cachedResponse)
+                if (cachedQuiz != null) {
+                    return@withContext cachedQuiz
+                }
+            } catch (e: Exception) {
+                Log.e("PointlyRepository", "Failed to parse cached quiz", e)
+            }
+        }
+
         val key = try {
             BuildConfig.GEMINI_API_KEY
         } catch (e: Exception) {
@@ -516,7 +540,9 @@ class PointlyRepository(
                 .trim()
 
             val adapter = RetrofitClient.moshiInstance.adapter(QuizResponse::class.java)
-            adapter.fromJson(cleanedJson) ?: throw Exception("Failed to parse JSON")
+            val quiz = adapter.fromJson(cleanedJson) ?: throw Exception("Failed to parse JSON")
+            insertAiCache(cacheKey, cleanedJson)
+            quiz
         } catch (e: Exception) {
             Log.e("PointlyRepository", "Gemini API error: ${e.message}. Falling back to simulation.", e)
             getMockQuiz(topic, subject)

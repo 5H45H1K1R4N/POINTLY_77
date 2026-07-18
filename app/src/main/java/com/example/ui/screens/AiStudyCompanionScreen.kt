@@ -23,6 +23,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.theme.EditorialDesignSystem
+import com.example.ui.theme.notebookBackground
+import com.example.ui.theme.editorialCard
 import com.example.data.model.QuizMode
 import com.example.ui.viewmodel.PointlyViewModel
 
@@ -67,76 +70,92 @@ fun AiStudyCompanionScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFFBF8FD))
+            .notebookBackground(
+                backgroundColor = MaterialTheme.colorScheme.background,
+                gridColor = EditorialDesignSystem.gridColor(),
+                marginColor = EditorialDesignSystem.marginColor()
+            )
             .statusBarsPadding()
     ) {
         // --- PHASE 2: Context-Aware Banner ---
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFFF3EDF7),
-            tonalElevation = 2.dp
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = "AI Context",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "AI Study Companion",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Student: ${profile?.name ?: userDoc?.name ?: "Student"} • ${userDoc?.className ?: "Class 8"} (CBSE)",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.testTag("ai_streak_badge")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Rounded.LocalFireDepartment,
-                            contentDescription = "Streak",
-                            tint = Color(0xFFFF5722),
-                            modifier = Modifier.size(16.dp)
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = "AI Context",
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "${profile?.streak ?: 77} Days",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "AI STUDY COMPANION",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = (-0.5).sp
+                                ),
+                                color = Color.Black
+                            )
+                            Text(
+                                text = "Student: ${profile?.name ?: userDoc?.name ?: "Student"} • ${userDoc?.className ?: "Class 8"} (CBSE)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                    
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFFFD54F), RoundedCornerShape(4.dp))
+                            .border(1.5.dp, Color.Black, RoundedCornerShape(4.dp))
+                            .testTag("ai_streak_badge")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.LocalFireDepartment,
+                                contentDescription = "Streak",
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${profile?.streak ?: 77} Days",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp,
+                                color = Color.Black
+                            )
+                        }
                     }
                 }
             }
+            HorizontalDivider(
+                thickness = 2.5.dp,
+                color = Color.Black
+            )
         }
 
         // --- SECTION NAVIGATION TABS ---
         ScrollableTabRow(
             selectedTabIndex = sections.indexOfFirst { it.first == aiActiveSection },
-            containerColor = Color(0xFFFBF8FD),
+            containerColor = Color.Transparent,
             edgePadding = 12.dp,
             divider = {}
         ) {
@@ -224,22 +243,31 @@ fun DashboardSection(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Banner Actions Bento Card
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    rotation = -1.0f,
+                    containerColor = Color(0xFF1E1E24), // slate dark
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 12.dp,
+                    borderWidth = 2.5.dp,
+                    shadowOffset = 5.dp
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Welcome to your AI Lab",
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
                     fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = Color.White
                 )
                 Text(
                     text = "A fully custom, context-aware companion to ace CBSE syllabus.",
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f),
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 
@@ -251,34 +279,49 @@ fun DashboardSection(
                 ) {
                     Button(
                         onClick = { onNavigateToSection("Ask AI") },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFD54F), // sticky yellow
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(2.dp, Color.Black),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Rounded.Forum, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Solve Doubts", fontSize = 11.sp)
+                        Text("Solve Doubts", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                     Button(
                         onClick = { onNavigateToSection("Revision") },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF90CAF9), // sticky blue
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(2.dp, Color.Black),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Rounded.AutoStories, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Revision Cards", fontSize = 11.sp)
+                        Text("Revision Cards", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
         // Today's Recommendations Card (Bento Style)
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    rotation = 0.8f,
+                    containerColor = Color.White,
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 10.dp,
+                    borderWidth = 2.2.dp,
+                    shadowOffset = 4.5.dp
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -290,21 +333,21 @@ fun DashboardSection(
                         Icon(
                             imageVector = Icons.Rounded.Lightbulb,
                             contentDescription = "Recommendations",
-                            tint = Color(0xFFFFB300)
+                            tint = Color(0xFFFF5252)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Daily Personalized Focus",
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Black,
                             fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color.Black
                         )
                     }
                     IconButton(
                         onClick = { viewModel.fetchAiRecommendations(forceRefresh = true) },
                         modifier = Modifier.size(32.dp).testTag("refresh_ai_rec_btn")
                     ) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = Color.Black, modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -315,7 +358,8 @@ fun DashboardSection(
                         text = aiRecommendations,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black.copy(alpha = 0.8f)
                     )
                 } else {
                     Box(
@@ -324,7 +368,7 @@ fun DashboardSection(
                             .height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black)
                     }
                 }
             }
@@ -335,11 +379,19 @@ fun DashboardSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-                modifier = Modifier.weight(1f).height(120.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(120.dp)
+                    .editorialCard(
+                        rotation = -1.5f,
+                        containerColor = Color(0xFFFFD54F), // Yellow sticky
+                        borderColor = Color.Black,
+                        shadowColor = Color.Black.copy(alpha = 0.8f),
+                        shapeRadius = 8.dp,
+                        borderWidth = 2.dp,
+                        shadowOffset = 4.dp
+                    )
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
@@ -348,21 +400,29 @@ fun DashboardSection(
                     Icon(
                         imageVector = Icons.Rounded.LocalFireDepartment,
                         contentDescription = "Streak",
-                        tint = Color(0xFFFF5722),
+                        tint = Color(0xFFFF5252),
                         modifier = Modifier.size(28.dp)
                     )
                     Column {
-                        Text("Streak Level", fontSize = 11.sp, color = Color.Gray)
-                        Text("$streak Days", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF333333))
+                        Text("Streak Level", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black.copy(alpha = 0.6f))
+                        Text("$streak Days", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.Black)
                     }
                 }
             }
 
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-                modifier = Modifier.weight(1.2f).height(120.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1.2f)
+                    .height(120.dp)
+                    .editorialCard(
+                        rotation = 1.5f,
+                        containerColor = Color(0xFF90CAF9), // Blue sticky
+                        borderColor = Color.Black,
+                        shadowColor = Color.Black.copy(alpha = 0.8f),
+                        shapeRadius = 8.dp,
+                        borderWidth = 2.2.dp,
+                        shadowOffset = 4.dp
+                    )
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
@@ -371,23 +431,30 @@ fun DashboardSection(
                     Icon(
                         imageVector = Icons.Rounded.TrendingDown,
                         contentDescription = "Weak Areas",
-                        tint = MaterialTheme.colorScheme.error,
+                        tint = Color(0xFFFF5252),
                         modifier = Modifier.size(28.dp)
                     )
                     Column {
-                        Text("Priority Subject", fontSize = 11.sp, color = Color.Gray)
-                        Text(worstSubject, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.error)
+                        Text("Priority Subject", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black.copy(alpha = 0.6f))
+                        Text(worstSubject, fontWeight = FontWeight.Black, fontSize = 16.sp, color = Color.Black)
                     }
                 }
             }
         }
 
         // Daily Reminder Bento Card (Phase 9)
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    rotation = -0.5f,
+                    containerColor = Color.White,
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 10.dp,
+                    borderWidth = 2.2.dp,
+                    shadowOffset = 4.dp
+                )
         ) {
             Row(
                 modifier = Modifier
@@ -400,13 +467,13 @@ fun DashboardSection(
                     Icon(
                         imageVector = Icons.Rounded.NotificationsActive,
                         contentDescription = "Reminders",
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = Color(0xFFFF5252),
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text("Daily AI Study Notification", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("Reminds you adaptive lessons daily", fontSize = 11.sp, color = Color.Gray)
+                        Text("Daily AI Study Notification", fontWeight = FontWeight.Black, fontSize = 13.sp, color = Color.Black)
+                        Text("Reminds you adaptive lessons daily", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black.copy(alpha = 0.6f))
                     }
                 }
                 
@@ -414,6 +481,10 @@ fun DashboardSection(
                 Switch(
                     checked = checked,
                     onCheckedChange = { checked = it },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.Black,
+                        checkedTrackColor = Color(0xFFFFD54F)
+                    ),
                     modifier = Modifier.testTag("notification_toggle")
                 )
             }
@@ -448,8 +519,12 @@ fun AskAiSection(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .background(Color.White, RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFE6E0EC), RoundedCornerShape(12.dp))
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = 0f
+                )
                 .padding(12.dp)
         ) {
             if (chatHistory.isEmpty()) {
@@ -543,15 +618,22 @@ fun AskAiSection(
             OutlinedTextField(
                 value = textInput,
                 onValueChange = { textInput = it },
-                placeholder = { Text("Ask doubt / explain concept...", fontSize = 13.sp) },
-                shape = RoundedCornerShape(12.dp),
+                placeholder = { Text("Ask doubt / explain concept...", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black.copy(alpha = 0.5f)) },
+                shape = RoundedCornerShape(4.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Black,
+                    unfocusedBorderColor = Color.Black,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
+                ),
                 modifier = Modifier
                     .weight(1f)
+                    .border(1.5.dp, Color.Black, RoundedCornerShape(4.dp))
                     .testTag("ai_chat_input"),
                 trailingIcon = {
                     if (chatHistory.isNotEmpty()) {
                         IconButton(onClick = { viewModel.clearAiChat() }) {
-                            Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Chat", tint = Color.Gray)
+                            Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Chat", tint = Color.Black)
                         }
                     }
                 },
@@ -565,10 +647,11 @@ fun AskAiSection(
                         textInput = ""
                     }
                 },
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(4.dp),
+                containerColor = Color.Black,
                 modifier = Modifier
                     .size(48.dp)
+                    .border(2.dp, Color.Black, RoundedCornerShape(4.dp))
                     .testTag("ai_send_btn")
             ) {
                 Icon(
@@ -602,11 +685,15 @@ fun RevisionSection(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = 0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Select Revision Type:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -699,7 +786,9 @@ fun RevisionSection(
         // Action Button to force generate
         Button(
             onClick = { viewModel.generateAiRevision(selectedType, selectedSubject, forceRefresh = true) },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(4.dp),
+            border = BorderStroke(2.dp, Color.Black),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("generate_revision_btn")
@@ -710,11 +799,15 @@ fun RevisionSection(
         }
 
         // Revision Deck Output
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = -0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -789,11 +882,15 @@ fun PlansSection(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = -0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Select Adaptive Planner:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -822,7 +919,9 @@ fun PlansSection(
 
         Button(
             onClick = { viewModel.generateAiPlan(selectedMode, forceRefresh = true) },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(4.dp),
+            border = BorderStroke(2.dp, Color.Black),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("generate_plan_btn")
@@ -833,11 +932,15 @@ fun PlansSection(
         }
 
         // Plan output
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = 0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -898,11 +1001,15 @@ fun PracticeSection(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // Core performance metrics
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = 0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Performance Trends", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -944,11 +1051,15 @@ fun PracticeSection(
         }
 
         // Practice launching pad
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = -0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -1022,11 +1133,15 @@ fun PracticeSection(
         }
 
         // Project Ideas & Collaboration (Phase 8)
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFFE6E0EC)),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    containerColor = Color.White,
+                    shadowColor = Color.Black,
+                    shadowOffset = 6.dp,
+                    rotation = 0.5f
+                )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

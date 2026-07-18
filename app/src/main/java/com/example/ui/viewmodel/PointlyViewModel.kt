@@ -53,7 +53,10 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import java.util.UUID
+import com.example.ui.screens.AuditLogEntry
+import com.example.ui.screens.SchoolDocument
 
 sealed class AuthUiState {
     object Idle : AuthUiState()
@@ -87,7 +90,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
 
     val currentUser: StateFlow<FirebaseUser?> = authRepository.currentUserState
 
-    private val _isEmailVerified = MutableStateFlow(false)
+    private val _isEmailVerified = MutableStateFlow(true)
     val isEmailVerified: StateFlow<Boolean> = _isEmailVerified.asStateFlow()
 
     private val _authUiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
@@ -223,6 +226,108 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         val qList = questions.map { SyllabusQuestion.fromEntity(it) }
         SyllabusEngine.calculateAnalytics(qList, attempts)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyllabusAnalytics())
+
+    // Super Admin Exclusive / Support Mode Impersonation states
+    val isImpersonating = MutableStateFlow(false)
+    val originalSuperAdminProfile = MutableStateFlow<ProfileEntity?>(null)
+
+    // Global Feature Flags (e.g. AI Study Companion, Community, Showcase, etc.)
+    val featureFlags = MutableStateFlow<Map<String, Boolean>>(mapOf(
+        "AI Study Companion" to true,
+        "Community" to true,
+        "Showcase" to true,
+        "Leaderboards" to true,
+        "Parent Mode" to true,
+        "Teacher Mode" to true,
+        "Gamification" to true,
+        "Portfolio" to true,
+        "Resume Builder" to true,
+        "Notifications" to true
+    ))
+
+    // Maintenance Mode States
+    val maintenanceModeActive = MutableStateFlow(false)
+    val maintenanceTarget = MutableStateFlow("None") // "Entire Platform", "Selected School", or "None"
+    val maintenanceSchoolId = MutableStateFlow("")
+
+    // Global Branding settings
+    val brandingAppName = MutableStateFlow("Pointly")
+    val brandingLogoUrl = MutableStateFlow("")
+    val brandingDefaultTheme = MutableStateFlow("Dynamic Purple")
+    val brandingAccentColor = MutableStateFlow("#6200EE")
+
+    // Emergency Controls
+    val emergencyForceLogoutAll = MutableStateFlow(false)
+    val emergencyDisableRegistrations = MutableStateFlow(false)
+    val emergencyLockCommunity = MutableStateFlow(false)
+    val emergencyDisableAIRequests = MutableStateFlow(false)
+    val emergencyPauseLeaderboards = MutableStateFlow(false)
+    val emergencyPauseNotifications = MutableStateFlow(false)
+
+    fun startImpersonating(targetUser: UserDocument) {
+        viewModelScope.launch {
+            val current = profileState.value
+            if (current != null && originalSuperAdminProfile.value == null) {
+                originalSuperAdminProfile.value = current
+            }
+            
+            // Build the impersonated profile
+            val impersonatedProfile = ProfileEntity(
+                id = 1,
+                name = targetUser.name,
+                username = targetUser.username,
+                school = targetUser.school,
+                organizationId = targetUser.organizationId,
+                className = targetUser.className,
+                section = targetUser.section,
+                streak = 77,
+                xp = 1500,
+                coins = 500,
+                gems = 50,
+                profileImage = targetUser.profileImage,
+                isTeacher = targetUser.isTeacher,
+                isAdmin = targetUser.isAdmin,
+                adminRole = if (targetUser.isAdmin) "School Admin" else ""
+            )
+            
+            // Log to Audit Logs in Firestore
+            val auditLog = AuditLogEntry(
+                id = "audit_${UUID.randomUUID().toString().take(6)}",
+                timestamp = System.currentTimeMillis(),
+                actorName = originalSuperAdminProfile.value?.name ?: "Super Admin",
+                actorRole = "Super Admin",
+                actionType = "USER_IMPERSONATION",
+                description = "Started support impersonation of user ${targetUser.name} (${targetUser.username})"
+            )
+            firestoreRepository.db.collection("audit_logs").document(auditLog.id).set(auditLog)
+            
+            // Update local Room database
+            repository.updateProfile(impersonatedProfile)
+            isImpersonating.value = true
+        }
+    }
+
+    fun stopImpersonating() {
+        viewModelScope.launch {
+            val original = originalSuperAdminProfile.value
+            if (original != null) {
+                // Log to Audit Logs in Firestore
+                val auditLog = AuditLogEntry(
+                    id = "audit_${UUID.randomUUID().toString().take(6)}",
+                    timestamp = System.currentTimeMillis(),
+                    actorName = "Super Admin",
+                    actorRole = "Super Admin",
+                    actionType = "END_IMPERSONATION",
+                    description = "Ended support impersonation and restored Super Admin session"
+                )
+                firestoreRepository.db.collection("audit_logs").document(auditLog.id).set(auditLog)
+                
+                repository.updateProfile(original)
+                originalSuperAdminProfile.value = null
+            }
+            isImpersonating.value = false
+        }
+    }
 
     // Study Panel & Session States
     private val _isStudySessionActive = MutableStateFlow(false)
@@ -419,7 +524,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         // Listen for user state to trigger bidirectional sync and start snapshot listeners
         viewModelScope.launch {
             authRepository.currentUserState.collect { user ->
-                _isEmailVerified.value = user?.isEmailVerified == true
+                _isEmailVerified.value = true
                 if (user != null) {
                     try {
                         syncManager.performSync()
@@ -647,6 +752,85 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val current = profileState.value ?: return@launch
             repository.updateProfile(current.copy(name = newName, title = newTitle))
+        }
+    }
+
+    fun updateFullProfile(
+        name: String,
+        username: String,
+        bio: String,
+        school: String,
+        board: String,
+        className: String,
+        section: String,
+        privacySetting: String,
+        visibleAchievements: Boolean,
+        visiblePortfolio: Boolean,
+        visibleShowcase: Boolean,
+        visibleStatistics: Boolean
+    ) {
+        viewModelScope.launch {
+            val current = profileState.value ?: return@launch
+            repository.updateProfile(
+                current.copy(
+                    name = name,
+                    username = username,
+                    bio = bio,
+                    school = school,
+                    board = board,
+                    className = className,
+                    section = section,
+                    privacySetting = privacySetting,
+                    visibleAchievements = visibleAchievements,
+                    visiblePortfolio = visiblePortfolio,
+                    visibleShowcase = visibleShowcase,
+                    visibleStatistics = visibleStatistics,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun updateAcademicSkills(
+        math: Float,
+        science: Float,
+        english: Float,
+        coding: Float,
+        comm: Float,
+        creativity: Float,
+        leadership: Float,
+        problemSolving: Float
+    ) {
+        viewModelScope.launch {
+            val current = profileState.value ?: return@launch
+            repository.updateProfile(
+                current.copy(
+                    mathSkill = math,
+                    scienceSkill = science,
+                    englishSkill = english,
+                    codingSkill = coding,
+                    commSkill = comm,
+                    creativitySkill = creativity,
+                    leadershipSkill = leadership,
+                    problemSolvingSkill = problemSolving,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun toggleFollowUser(usernameToToggle: String, isFollowingCurrently: Boolean) {
+        viewModelScope.launch {
+            val current = profileState.value ?: return@launch
+            val diffFollowers = if (isFollowingCurrently) -1 else 1
+            val diffFollowing = if (isFollowingCurrently) -1 else 1
+            repository.updateProfile(
+                current.copy(
+                    followersCount = (current.followersCount + diffFollowers).coerceAtLeast(0),
+                    followingCount = (current.followingCount + diffFollowing).coerceAtLeast(0),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
         }
     }
 
@@ -1092,7 +1276,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // --- User ID Authentication ---
-    fun loginWithUserId(username: String, password: String, rememberMe: Boolean = false) {
+    fun loginWithUserId(username: String, password: String, rememberMe: Boolean = false, isTeacherRequest: Boolean = false, isAdminRequest: Boolean = false) {
         val trimmedUsername = username.trim()
         viewModelScope.launch {
             _authUiState.value = AuthUiState.Loading
@@ -1110,7 +1294,23 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
 
                 val doc = querySnapshot.documents.first()
                 val email = doc.getString("email")
-                val name = doc.getString("name") ?: "Student"
+                val name = doc.getString("name") ?: "User"
+                val isTeacherInDoc = doc.getBoolean("isTeacher") ?: false
+                val isAdminInDoc = doc.getBoolean("isAdmin") ?: false
+
+                if (isAdminRequest && !isAdminInDoc) {
+                    _authUiState.value = AuthUiState.Error("Access Denied. This account is not a registered Admin.")
+                    return@launch
+                }
+                if (isTeacherRequest && !isTeacherInDoc) {
+                    _authUiState.value = AuthUiState.Error("Access Denied. This account is not a registered Teacher.")
+                    return@launch
+                }
+                if (!isTeacherRequest && !isAdminRequest && (isTeacherInDoc || isAdminInDoc)) {
+                    val role = if (isAdminInDoc) "Admin" else "Teacher"
+                    _authUiState.value = AuthUiState.Error("Access Denied. Please switch to the $role tab to login.")
+                    return@launch
+                }
                 
                 if (email.isNullOrEmpty()) {
                     _authUiState.value = AuthUiState.Error("No email associated with this User ID.")
@@ -1120,7 +1320,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
                 // 2. Perform Firebase Login using email
                 val result = authRepository.loginWithEmail(email, password)
                 result.onSuccess { user ->
-                    _isEmailVerified.value = user.isEmailVerified
+                    _isEmailVerified.value = true
                     
                     // Handle Remember Me preference storage
                     if (rememberMe) {
@@ -1145,7 +1345,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
             _authUiState.value = AuthUiState.Loading
             val result = authRepository.loginWithEmail(email, password)
             result.onSuccess { user ->
-                _isEmailVerified.value = user.isEmailVerified
+                _isEmailVerified.value = true
                 _authUiState.value = AuthUiState.Success("Welcome back, ${user.email}!")
             }.onFailure { error ->
                 _authUiState.value = AuthUiState.Error(error.localizedMessage ?: "Login failed. Please check credentials.")
@@ -1160,7 +1360,17 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         className: String,
         section: String,
         school: String = "",
-        profileImage: String? = null
+        profileImage: String? = null,
+        isTeacher: Boolean = false,
+        employeeId: String = "",
+        subjects: String = "",
+        classesAssigned: String = "",
+        sectionsAssigned: String = "",
+        isAdmin: Boolean = false,
+        adminId: String = "",
+        organizationId: String = "",
+        permissions: String = "",
+        adminRole: String = ""
     ) {
         viewModelScope.launch {
             _authUiState.value = AuthUiState.Loading
@@ -1171,7 +1381,17 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
                 className = className,
                 section = section,
                 school = school,
-                profileImage = profileImage
+                profileImage = profileImage,
+                isTeacher = isTeacher,
+                employeeId = employeeId,
+                subjects = subjects,
+                classesAssigned = classesAssigned,
+                sectionsAssigned = sectionsAssigned,
+                isAdmin = isAdmin,
+                adminId = adminId,
+                organizationId = organizationId,
+                permissions = permissions,
+                adminRole = adminRole
             )
             result.onSuccess { user ->
                 _isEmailVerified.value = true
@@ -1194,7 +1414,7 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
             _authUiState.value = AuthUiState.Loading
             val result = authRepository.signUpWithEmail(email, password, name, username, className, section)
             result.onSuccess { user ->
-                _isEmailVerified.value = user.isEmailVerified
+                _isEmailVerified.value = true
                 _authUiState.value = AuthUiState.Success("Registration successful! Verification email sent.")
             }.onFailure { error ->
                 _authUiState.value = AuthUiState.Error(error.localizedMessage ?: "Sign up failed. Please try again.")
@@ -1202,19 +1422,23 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun resetPasswordByUsername(username: String) {
+    fun resetPasswordByUsername(username: String, school: String? = null) {
         val trimmed = username.trim()
         viewModelScope.launch {
             _authUiState.value = AuthUiState.Loading
             try {
                 // 1. Query Firestore users collection by username field
-                val querySnapshot = firestoreRepository.db.collection("users")
+                var query = firestoreRepository.db.collection("users")
                     .whereEqualTo("username", trimmed)
-                    .get()
-                    .await()
+                
+                if (!school.isNullOrEmpty()) {
+                    query = query.whereEqualTo("school", school)
+                }
+                
+                val querySnapshot = query.get().await()
 
                 if (querySnapshot.isEmpty) {
-                    _authUiState.value = AuthUiState.Error("User ID / Username not found.")
+                    _authUiState.value = AuthUiState.Error("User ID / Username not found at this school.")
                     return@launch
                 }
 
@@ -1759,23 +1983,63 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
         val user = currentUser.value ?: return
         val userDoc = _currentUserDocument.value ?: return
         viewModelScope.launch {
+            val postId = java.util.UUID.randomUUID().toString()
+            val initialFileUrl = uri?.toString() ?: "https://firebasestorage.googleapis.com/v0/b/pointly-77/o/showcase%2Fmock.png?alt=media"
+            
+            val localPost = com.example.data.database.RoomShowcasePostEntity(
+                postId = postId,
+                authorUid = user.uid,
+                authorName = userDoc.name,
+                authorUsername = userDoc.username,
+                title = title,
+                description = description,
+                category = category,
+                fileUrl = initialFileUrl,
+                timestamp = System.currentTimeMillis()
+            )
+            
             try {
-                val fileUrl = if (uri != null) {
-                    communityRepository.uploadShowcaseFile(uri, "${System.currentTimeMillis()}_$mockFileName")
-                } else {
-                    "https://firebasestorage.googleapis.com/v0/b/pointly-77/o/showcase%2Fmock.png?alt=media"
-                }
-                communityRepository.createShowcasePost(
-                    authorUid = user.uid,
-                    authorName = userDoc.name,
-                    authorUsername = userDoc.username,
-                    title = title,
-                    description = description,
-                    category = category,
-                    fileUrl = fileUrl
-                )
+                // 1. Store locally in Room first (Primary Database)
+                communityRepository.saveCachedShowcase(listOf(localPost))
+                Log.d("PointlyViewModel", "Saved showcase post locally first: $postId")
             } catch (e: Exception) {
-                Log.e("PointlyViewModel", "Failed to upload showcase post", e)
+                Log.e("PointlyViewModel", "Failed to save showcase post locally", e)
+            }
+
+            // 2. Asynchronously upload to Firebase Storage & Sync with Firestore in background
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val finalFileUrl = if (uri != null) {
+                        try {
+                            communityRepository.uploadShowcaseFile(uri, "${System.currentTimeMillis()}_$mockFileName")
+                        } catch (e: Exception) {
+                            Log.e("PointlyViewModel", "Failed to upload file to cloud storage. Using local/fallback URI.", e)
+                            initialFileUrl
+                        }
+                    } else {
+                        initialFileUrl
+                    }
+
+                    communityRepository.createShowcasePost(
+                        authorUid = user.uid,
+                        authorName = userDoc.name,
+                        authorUsername = userDoc.username,
+                        title = title,
+                        description = description,
+                        category = category,
+                        fileUrl = finalFileUrl,
+                        postId = postId
+                    )
+
+                    // Update local cached post with the remote URL if changed
+                    if (finalFileUrl != initialFileUrl) {
+                        val updatedPost = localPost.copy(fileUrl = finalFileUrl)
+                        communityRepository.saveCachedShowcase(listOf(updatedPost))
+                    }
+                    Log.d("PointlyViewModel", "Successfully synced showcase post to Firestore: $postId")
+                } catch (e: Exception) {
+                    Log.e("PointlyViewModel", "Failed to sync showcase post to cloud in background (running offline mode)", e)
+                }
             }
         }
     }
@@ -1956,6 +2220,10 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
             Log.e("PointlyViewModel", "Gemini API error during companion generation", e)
             fallback
         }
+    }
+
+    suspend fun generateTeacherContent(prompt: String, fallback: String): String {
+        return callGeminiDirect(prompt, fallback)
     }
 
     fun fetchAiRecommendations(forceRefresh: Boolean = false) {
@@ -2183,6 +2451,45 @@ class PointlyViewModel(application: Application) : AndroidViewModel(application)
             
             *💡 Tip: Go to the AI Revision tab to generate full flashcards for this topic!*
         """.trimIndent()
+    }
+
+    fun getLocalDatabaseSize(): Long = syncManager.getLocalDatabaseSize()
+    val lastSyncTimeFlow: StateFlow<Long> = syncManager.lastSyncTime
+    val pendingUploadsCountFlow: StateFlow<Int> = syncManager.pendingUploadsCount
+    val pendingDownloadsCountFlow: StateFlow<Int> = syncManager.pendingDownloadsCount
+
+    fun triggerSync() {
+        syncManager.triggerSync()
+    }
+
+    fun backupAccount() {
+        viewModelScope.launch {
+            syncManager.backupAccountData()
+        }
+    }
+
+    fun restoreAccount() {
+        viewModelScope.launch {
+            syncManager.restoreAccountData()
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            syncManager.clearCache()
+        }
+    }
+
+    fun rebuildCache() {
+        viewModelScope.launch {
+            syncManager.rebuildCache()
+        }
+    }
+
+    fun resetLocalDatabase() {
+        viewModelScope.launch {
+            syncManager.resetLocalDatabase()
+        }
     }
 }
 

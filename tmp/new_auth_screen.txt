@@ -1,0 +1,1067 @@
+enum class AuthScreenMode {
+    LOGIN,
+    REGISTER,
+    FORGOT_PASSWORD
+}
+
+enum class ActiveRole {
+    NONE, STUDENT, TEACHER, SCHOOL_ADMIN, SUPER_ADMIN
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PointlyAuthScreen(
+    viewModel: PointlyViewModel,
+    modifier: Modifier = Modifier
+) {
+    var activeRole by remember { mutableStateOf(ActiveRole.NONE) }
+    var authMode by remember { mutableStateOf(AuthScreenMode.LOGIN) }
+    val authUiState by viewModel.authUiState.collectAsStateWithLifecycle()
+
+    // Remember Me
+    var rememberMe by remember { mutableStateOf(true) }
+
+    // Input Fields
+    var userId by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    // Register Fields
+    var regName by remember { mutableStateOf("") }
+    var regUsername by remember { mutableStateOf("") }
+    var regPassword by remember { mutableStateOf("") }
+    var regPasswordVisible by remember { mutableStateOf(false) }
+    var regConfirmPassword by remember { mutableStateOf("") }
+    var regConfirmPasswordVisible by remember { mutableStateOf(false) }
+    var regClass by remember { mutableStateOf("") }
+    var regSection by remember { mutableStateOf("") }
+    var regProfileSeed by remember { mutableStateOf("Quest") }
+
+    // Forgot Password Fields
+    var forgotUsername by remember { mutableStateOf("") }
+
+    // School Selector State
+    var schoolsList by remember { mutableStateOf<List<SchoolDocument>>(emptyList()) }
+    var selectedSchool by remember { mutableStateOf<SchoolDocument?>(null) }
+    var recentSchools by remember { mutableStateOf<List<SchoolDocument>>(emptyList()) }
+    var showSchoolSelector by remember { mutableStateOf(false) }
+    var registerStep by remember { mutableStateOf(1) } // 1: School, 2: Class/Section, 3: Details
+
+    // Local Validation Errors
+    var validationError by remember { mutableStateOf<String?>(null) }
+
+    // Load dynamic list of schools on startup
+    LaunchedEffect(Unit) {
+        try {
+            val snapshot = viewModel.firestoreRepository.db.collection("schools").get().await()
+            schoolsList = snapshot.documents.mapNotNull { doc ->
+                doc.toObject(SchoolDocument::class.java)?.copy(id = doc.id)
+            }
+            if (schoolsList.isEmpty()) {
+                val seedSchool = SchoolDocument(
+                    id = "bento_school",
+                    name = "Bento International School",
+                    organizationId = "ORG-777",
+                    board = "CBSE",
+                    academicYear = "2026-2027",
+                    city = "Antigravity Sector",
+                    classes = listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10"),
+                    sections = listOf("A", "B", "C"),
+                    address = "77 Slate Bento Avenue, Antigravity Sector"
+                )
+                viewModel.firestoreRepository.db.collection("schools").document("bento_school").set(seedSchool).await()
+                schoolsList = listOf(seedSchool)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // On setup, load remembered User ID if present
+        val remembered = viewModel.getRememberedUser()
+        if (remembered.isNotEmpty()) {
+            userId = remembered
+            rememberMe = true
+        }
+    }
+
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+        cursorColor = MaterialTheme.colorScheme.primary,
+        focusedLabelColor = MaterialTheme.colorScheme.primary,
+        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        errorBorderColor = MaterialTheme.colorScheme.error,
+        errorLabelColor = MaterialTheme.colorScheme.error,
+        errorCursorColor = MaterialTheme.colorScheme.error
+    )
+
+    if (showSchoolSelector) {
+        SchoolSelectorDialog(
+            schools = schoolsList,
+            recentSchools = recentSchools,
+            onSchoolSelected = { school ->
+                selectedSchool = school
+                showSchoolSelector = false
+                validationError = null
+                if (!recentSchools.any { it.id == school.id }) {
+                    recentSchools = (listOf(school) + recentSchools).take(3)
+                }
+            },
+            onDismiss = { showSchoolSelector = false }
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // High-Polished Gamified Brand Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "P",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                Column {
+                    Text(
+                        "POINTLY 77",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        "GAMIFIED LEARNING ECOSYSTEM",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+
+            if (activeRole == ActiveRole.NONE) {
+                // PHASE 1: Role Welcome Selection Screen
+                Text(
+                    text = "Welcome to Pointly",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Select your gateway card to access the learning dimension.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Bento 2x2 Grid of Role Selection Cards
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        BentoRoleCard(
+                            title = "Student Quest",
+                            emoji = "👨🎓",
+                            description = "Claim achievements, complete quests & earn real XP rewards.",
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.STUDENT
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                        BentoRoleCard(
+                            title = "Teacher Sanctum",
+                            emoji = "👨🏫",
+                            description = "Assign quests, review analytics & guide students' paths.",
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.TEACHER
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        BentoRoleCard(
+                            title = "School Admin",
+                            emoji = "🏫",
+                            description = "Configure rosters, manage parameters & view local analytics.",
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.SCHOOL_ADMIN
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                        BentoRoleCard(
+                            title = "Super Admin",
+                            emoji = "👑",
+                            description = "Global oversight, platform controls, settings & school setup.",
+                            color = Color(0xFFFFECEF).copy(alpha = 0.95f),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.SUPER_ADMIN
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                    }
+                }
+            } else {
+                // Dedicated Authentication Flow for Selected Role
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // Role-Specific Sub-Header
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val roleEmoji = when (activeRole) {
+                                ActiveRole.STUDENT -> "👨🎓"
+                                ActiveRole.TEACHER -> "👨🏫"
+                                ActiveRole.SCHOOL_ADMIN -> "🏫"
+                                ActiveRole.SUPER_ADMIN -> "👑"
+                                else -> ""
+                            }
+                            Text(
+                                text = roleEmoji,
+                                fontSize = 24.sp
+                            )
+                            Text(
+                                text = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student Portal"
+                                    ActiveRole.TEACHER -> "Teacher Sanctum"
+                                    ActiveRole.SCHOOL_ADMIN -> "School Admin Hub"
+                                    ActiveRole.SUPER_ADMIN -> "Core Super Admin"
+                                    else -> ""
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        val titleText = when (authMode) {
+                            AuthScreenMode.LOGIN -> "Access Session"
+                            AuthScreenMode.REGISTER -> "Create Student Profile"
+                            AuthScreenMode.FORGOT_PASSWORD -> "Recover Magical Key"
+                        }
+                        val subtitleText = when (authMode) {
+                            AuthScreenMode.LOGIN -> "Log in with your custom details below."
+                            AuthScreenMode.REGISTER -> "Register a new student account below."
+                            AuthScreenMode.FORGOT_PASSWORD -> "Recover your account credentials securely."
+                        }
+
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+
+                        validationError?.let {
+                            Text(
+                                text = "⚠ $it",
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        when (authMode) {
+                            AuthScreenMode.LOGIN -> {
+                                // School Selector button (if NOT Super Admin)
+                                if (activeRole != ActiveRole.SUPER_ADMIN) {
+                                    Button(
+                                        onClick = { showSchoolSelector = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = selectedSchool?.name ?: "Select Your School *",
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(Icons.Rounded.Search, contentDescription = null)
+                                        }
+                                    }
+                                }
+
+                                // User ID (Username)
+                                val labelText = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student User ID *"
+                                    ActiveRole.TEACHER -> "Teacher ID (Username) *"
+                                    ActiveRole.SCHOOL_ADMIN -> "Admin ID (Username) *"
+                                    ActiveRole.SUPER_ADMIN -> "Super Admin ID *"
+                                    else -> "User ID *"
+                                }
+                                OutlinedTextField(
+                                    value = userId,
+                                    onValueChange = { userId = it; validationError = null },
+                                    label = { Text(labelText) },
+                                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("login_email_input"),
+                                    colors = textFieldColors
+                                )
+
+                                // Password
+                                OutlinedTextField(
+                                    value = password,
+                                    onValueChange = { password = it; validationError = null },
+                                    label = { Text("Secret Password *") },
+                                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("login_password_input"),
+                                    colors = textFieldColors
+                                )
+
+                                // Remember me & Forgot Password spell
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = rememberMe,
+                                            onCheckedChange = { rememberMe = it },
+                                            modifier = Modifier.testTag("remember_me_checkbox")
+                                        )
+                                        Text("Remember Me", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            validationError = null
+                                            authMode = AuthScreenMode.FORGOT_PASSWORD
+                                        },
+                                        modifier = Modifier.testTag("forgot_password_button")
+                                    ) {
+                                        Text("Forgot Key?", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // Submit Session Button
+                                Button(
+                                    onClick = {
+                                        if (activeRole != ActiveRole.SUPER_ADMIN && selectedSchool == null) {
+                                            validationError = "School Selection is required."
+                                        } else if (userId.isBlank()) {
+                                            validationError = "User ID is required."
+                                        } else if (password.isBlank()) {
+                                            validationError = "Password is required."
+                                        } else {
+                                            validationError = null
+                                            if (activeRole == ActiveRole.SUPER_ADMIN) {
+                                                // Handle Super Admin Auth / Dynamic Seeding if needed
+                                                viewModel.viewModelScope.launch {
+                                                    val querySnapshot = viewModel.firestoreRepository.db.collection("users")
+                                                        .whereEqualTo("username", userId.trim().lowercase())
+                                                        .get()
+                                                        .await()
+                                                    if (querySnapshot.isEmpty && userId.trim().lowercase() == "superadmin") {
+                                                        // Automatically Seed Super Admin account dynamically!
+                                                        viewModel.signUpWithUserId(
+                                                            username = "superadmin",
+                                                            password = password,
+                                                            fullName = "Pointly Platform Owner",
+                                                            className = "",
+                                                            section = "",
+                                                            school = "Platform Headquarters",
+                                                            profileImage = "https://api.dicebear.com/7.x/adventurer/svg?seed=SuperAdmin",
+                                                            isAdmin = true,
+                                                            adminId = "superadmin",
+                                                            organizationId = "SUPER-ADMIN",
+                                                            adminRole = "Super Admin"
+                                                        )
+                                                    } else {
+                                                        viewModel.loginWithUserId(
+                                                            username = userId.trim(),
+                                                            password = password,
+                                                            rememberMe = rememberMe,
+                                                            isAdminRequest = true
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                // Authenticate checking matching school & role constraints
+                                                viewModel.viewModelScope.launch {
+                                                    val q = viewModel.firestoreRepository.db.collection("users")
+                                                        .whereEqualTo("username", userId.trim().lowercase())
+                                                        .get()
+                                                        .await()
+                                                    if (q.isEmpty) {
+                                                        validationError = "User ID not registered."
+                                                    } else {
+                                                        val doc = q.documents.first()
+                                                        val dbSchool = doc.getString("school") ?: ""
+                                                        val dbIsTeacher = doc.getBoolean("isTeacher") ?: false
+                                                        val dbIsAdmin = doc.getBoolean("isAdmin") ?: false
+                                                        val dbAdminRole = doc.getString("adminRole") ?: ""
+
+                                                        val schoolMatch = dbSchool.equals(selectedSchool?.name, ignoreCase = true)
+                                                        val roleMatch = when (activeRole) {
+                                                            ActiveRole.STUDENT -> !dbIsTeacher && !dbIsAdmin
+                                                            ActiveRole.TEACHER -> dbIsTeacher
+                                                            ActiveRole.SCHOOL_ADMIN -> dbIsAdmin && dbAdminRole != "Super Admin"
+                                                            else -> false
+                                                        }
+
+                                                        if (!schoolMatch) {
+                                                            validationError = "This account is registered at a different school: $dbSchool"
+                                                        } else if (!roleMatch) {
+                                                            validationError = "Role mismatch. Account is not registered under this category."
+                                                        } else {
+                                                            viewModel.loginWithUserId(
+                                                                username = userId.trim(),
+                                                                password = password,
+                                                                rememberMe = rememberMe,
+                                                                isTeacherRequest = activeRole == ActiveRole.TEACHER,
+                                                                isAdminRequest = activeRole == ActiveRole.SCHOOL_ADMIN
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("login_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (authUiState is AuthUiState.Loading) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                                    } else {
+                                        Text("Initiate Session", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
+                            }
+
+                            AuthScreenMode.REGISTER -> {
+                                if (activeRole != ActiveRole.STUDENT) {
+                                    Text("Registration is not permitted for this role. Account credentials must be added by a School/Super Administrator.", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                } else {
+                                    // STEP 1: SELECT SCHOOL
+                                    if (registerStep == 1) {
+                                        Text("Step 1: Choose Your School", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        Button(
+                                            onClick = { showSchoolSelector = true },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = selectedSchool?.name ?: "Tap to Search School *",
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                Icon(Icons.Rounded.Search, contentDescription = null)
+                                            }
+                                        }
+
+                                        selectedSchool?.let {
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Text("School ID: ${it.id}", fontSize = 11.sp, color = Color.Gray)
+                                                    Text("Board: ${it.board}", fontSize = 11.sp, color = Color.Gray)
+                                                    Text("City: ${it.city}", fontSize = 11.sp, color = Color.Gray)
+                                                }
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (selectedSchool == null) {
+                                                    validationError = "You must select a school to continue."
+                                                } else {
+                                                    validationError = null
+                                                    registerStep = 2
+                                                }
+                                            },
+                                            enabled = selectedSchool != null,
+                                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        ) {
+                                            Text("Next: Class Selection")
+                                        }
+                                    }
+
+                                    // STEP 2: SELECT CLASS & SECTION
+                                    if (registerStep == 2) {
+                                        Text("Step 2: Choose Class & Section", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        val availableClasses = selectedSchool?.classes?.ifEmpty { listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10") } ?: listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10")
+                                        val availableSections = selectedSchool?.sections?.ifEmpty { listOf("A", "B", "C") } ?: listOf("A", "B", "C")
+
+                                        if (regClass.isEmpty()) regClass = availableClasses.first()
+                                        if (regSection.isEmpty()) regSection = availableSections.first()
+
+                                        Text("Select Class:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            availableClasses.forEach { cls ->
+                                                FilterChip(
+                                                    selected = regClass == cls,
+                                                    onClick = { regClass = cls },
+                                                    label = { Text(cls) }
+                                                )
+                                            }
+                                        }
+
+                                        Text("Select Section:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            availableSections.forEach { sec ->
+                                                FilterChip(
+                                                    selected = regSection == sec,
+                                                    onClick = { regSection = sec },
+                                                    label = { Text("Section $sec") }
+                                                )
+                                            }
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = { registerStep = 1 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Back")
+                                            }
+                                            Button(
+                                                onClick = { registerStep = 3 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Continue")
+                                            }
+                                        }
+                                    }
+
+                                    // STEP 3: ACCOUNT DETAILS
+                                    if (registerStep == 3) {
+                                        Text("Step 3: Enter Details", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        OutlinedTextField(
+                                            value = regName,
+                                            onValueChange = { regName = it; validationError = null },
+                                            label = { Text("Full Student Name *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regUsername,
+                                            onValueChange = { regUsername = it; validationError = null },
+                                            label = { Text("Desired Student ID (Username) *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regPassword,
+                                            onValueChange = { regPassword = it; validationError = null },
+                                            label = { Text("Set Password *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            trailingIcon = {
+                                                IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
+                                                    Icon(
+                                                        imageVector = if (regPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                        contentDescription = null
+                                                    )
+                                                }
+                                            },
+                                            visualTransformation = if (regPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regConfirmPassword,
+                                            onValueChange = { regConfirmPassword = it; validationError = null },
+                                            label = { Text("Confirm Password *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            trailingIcon = {
+                                                IconButton(onClick = { regConfirmPasswordVisible = !regConfirmPasswordVisible }) {
+                                                    Icon(
+                                                        imageVector = if (regConfirmPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                        contentDescription = null
+                                                    )
+                                                }
+                                            },
+                                            visualTransformation = if (regConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = { registerStep = 2 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Back")
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    if (regName.isBlank()) {
+                                                        validationError = "Full Name is required."
+                                                    } else if (regUsername.trim().length < 4) {
+                                                        validationError = "Username must be at least 4 characters."
+                                                    } else if (regPassword.length < 6) {
+                                                        validationError = "Password must be at least 6 characters."
+                                                    } else if (regPassword != regConfirmPassword) {
+                                                        validationError = "Passwords do not match."
+                                                    } else {
+                                                        validationError = null
+                                                        val avatarUrl = "https://api.dicebear.com/7.x/adventurer/svg?seed=$regProfileSeed"
+                                                        viewModel.signUpWithUserId(
+                                                            username = regUsername.lowercase().trim(),
+                                                            password = regPassword,
+                                                            fullName = regName.trim(),
+                                                            className = regClass.trim(),
+                                                            section = regSection.trim(),
+                                                            school = selectedSchool?.name ?: "Bento International School",
+                                                            profileImage = avatarUrl
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f).height(52.dp).testTag("register_button"),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                            ) {
+                                                if (authUiState is AuthUiState.Loading) {
+                                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                                                } else {
+                                                    Text("Create Account")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            AuthScreenMode.FORGOT_PASSWORD -> {
+                                if (activeRole != ActiveRole.SUPER_ADMIN) {
+                                    Button(
+                                        onClick = { showSchoolSelector = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = selectedSchool?.name ?: "Select Your School *",
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(Icons.Rounded.Search, contentDescription = null)
+                                        }
+                                    }
+                                }
+
+                                val forgotLabel = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student User ID"
+                                    ActiveRole.TEACHER -> "Teacher ID"
+                                    ActiveRole.SCHOOL_ADMIN -> "School Admin ID"
+                                    ActiveRole.SUPER_ADMIN -> "Super Admin ID"
+                                    else -> "User ID"
+                                }
+                                OutlinedTextField(
+                                    value = forgotUsername,
+                                    onValueChange = { forgotUsername = it; validationError = null },
+                                    label = { Text(forgotLabel) },
+                                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("forgot_username_input"),
+                                    colors = textFieldColors
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Button(
+                                    onClick = {
+                                        if (activeRole != ActiveRole.SUPER_ADMIN && selectedSchool == null) {
+                                            validationError = "Please select your school."
+                                        } else if (forgotUsername.trim().length < 4) {
+                                            validationError = "Please enter a valid User ID."
+                                        } else {
+                                            validationError = null
+                                            viewModel.resetPasswordByUsername(forgotUsername.trim(), selectedSchool?.name)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("forgot_password_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (authUiState is AuthUiState.Loading) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                                    } else {
+                                        Text("Recover Key", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        validationError = null
+                                        authMode = AuthScreenMode.LOGIN
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Back to Login", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Footers: Back & Switch Modes
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (activeRole == ActiveRole.STUDENT && authMode != AuthScreenMode.FORGOT_PASSWORD) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val promptText = if (authMode == AuthScreenMode.LOGIN) "New Student?" else "Already registered?"
+                            val actionText = if (authMode == AuthScreenMode.LOGIN) "Create profile" else "Login instead"
+
+                            Text(promptText, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = {
+                                    validationError = null
+                                    registerStep = 1
+                                    authMode = if (authMode == AuthScreenMode.LOGIN) AuthScreenMode.REGISTER else AuthScreenMode.LOGIN
+                                },
+                                modifier = Modifier.testTag(if (authMode == AuthScreenMode.LOGIN) "switch_to_register_button" else "switch_to_login_button")
+                            ) {
+                                Text(actionText, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            activeRole = ActiveRole.NONE
+                            authMode = AuthScreenMode.LOGIN
+                            validationError = null
+                            selectedSchool = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Back to Role Selection", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SchoolSelectorDialog(
+    schools: List<SchoolDocument>,
+    recentSchools: List<SchoolDocument>,
+    onSchoolSelected: (SchoolDocument) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredSchools = schools.filter {
+        it.name.contains(searchQuery, ignoreCase = true) ||
+        it.city.contains(searchQuery, ignoreCase = true) ||
+        it.board.contains(searchQuery, ignoreCase = true)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Select School", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search by name, city, board...") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().height(320.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (recentSchools.isNotEmpty() && searchQuery.isEmpty()) {
+                    Text("Recent Selections", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    recentSchools.forEach { school ->
+                        Card(
+                            onClick = { onSchoolSelected(school) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(school.name, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                Text("Available Schools", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (filteredSchools.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No schools found.", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(filteredSchools) { school ->
+                                Card(
+                                    onClick = { onSchoolSelected(school) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.primary),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                school.name.take(2).uppercase(),
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(school.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(school.board, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                                Text("•", fontSize = 10.sp, color = Color.Gray)
+                                                Text(school.city.ifEmpty { "Antigravity" }, fontSize = 10.sp, color = Color.Gray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss")
+            }
+        }
+    )
+}
+
+@Composable
+fun BentoRoleCard(
+    title: String,
+    emoji: String,
+    description: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = color),
+        border = BorderStroke(1.5.dp, Color.Black),
+        modifier = modifier.height(160.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(emoji, fontSize = 28.sp)
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.Black.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp,
+                    color = Color.Black
+                )
+                Text(
+                    text = description,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = Color.Black.copy(alpha = 0.7f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}

@@ -13,35 +13,35 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    onPrimary = Color(0xFF381E72),
-    secondary = PurpleGrey80,
-    onSecondary = Color(0xFF332D41),
-    tertiary = Pink80,
+    primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF000000),
+    secondary = Color(0xFFCCC2DC),
+    onSecondary = Color(0xFF1E1E24),
+    tertiary = Color(0xFFFF8A80),
     background = Color(0xFF121115),
     onBackground = Color(0xFFE6E1E5),
     surface = Color(0xFF1D1B22),
     onSurface = Color(0xFFE6E1E5),
     surfaceVariant = Color(0xFF26242B),
     onSurfaceVariant = Color(0xFFCAC4D0),
-    outline = Color(0xFF938F99),
+    outline = Color(0xFFFFFFFF),
     error = Color(0xFFF2B8B5),
     onError = Color(0xFF601410)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
+    primary = Color(0xFF000000),
     onPrimary = Color.White,
-    secondary = PurpleGrey40,
+    secondary = Color(0xFF1E1E24),
     onSecondary = Color.White,
-    tertiary = Pink40,
-    background = Color(0xFFFEF7FF), // Bento theme soft canvas
-    onBackground = Color(0xFF1D1B20),
+    tertiary = Color(0xFFFF5252),
+    background = Color(0xFFFAF8F5), // Bento notebook soft cream canvas
+    onBackground = Color(0xFF000000),
     surface = Color.White,
-    onSurface = Color(0xFF1D1B20),
-    surfaceVariant = Color(0xFFF3EDF7),
-    onSurfaceVariant = Color(0xFF49454F),
-    outline = Color(0xFF79747E),
+    onSurface = Color(0xFF000000),
+    surfaceVariant = Color(0xFFF3EFE9),
+    onSurfaceVariant = Color(0xFF2E2D2B),
+    outline = Color(0xFF000000),
     error = Color(0xFFB3261E),
     onError = Color.White
 )

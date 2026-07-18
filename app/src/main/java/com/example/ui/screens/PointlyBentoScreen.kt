@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -23,11 +26,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.theme.EditorialDesignSystem
+import com.example.ui.theme.notebookBackground
+import com.example.ui.theme.editorialCard
 import com.example.data.database.ProfileEntity
 import com.example.data.database.StudyMissionEntity
 import com.example.data.database.AchievementEntity
@@ -52,6 +59,68 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.example.ui.viewmodel.AuthUiState
+import androidx.compose.material.icons.automirrored.rounded.*
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.launch
+
+@Composable
+fun SupportModeBanner(viewModel: PointlyViewModel) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        ),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        "Support Mode Active",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "You are viewing this account in Support Mode. No password changes allowed.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = { viewModel.stopImpersonating() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("End Session", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +153,34 @@ fun PointlyBentoScreen(
     }
 
     val profile by viewModel.profileState.collectAsStateWithLifecycle()
+    val isImpersonating by viewModel.isImpersonating.collectAsStateWithLifecycle()
+
+    if (profile?.isAdmin == true) {
+        Box(modifier = modifier.fillMaxSize()) {
+            if (profile?.adminRole == "Super Admin") {
+                SuperAdminDashboardScreen(viewModel = viewModel, modifier = Modifier.fillMaxSize())
+            } else {
+                AdminDashboardScreen(viewModel = viewModel, modifier = Modifier.fillMaxSize())
+            }
+            if (isImpersonating) {
+                Box(modifier = Modifier.align(Alignment.TopCenter)) {
+                    SupportModeBanner(viewModel = viewModel)
+                }
+            }
+        }
+        return
+    }
+    if (profile?.isTeacher == true) {
+        Box(modifier = modifier.fillMaxSize()) {
+            TeacherDashboardScreen(viewModel = viewModel, modifier = Modifier.fillMaxSize())
+            if (isImpersonating) {
+                Box(modifier = Modifier.align(Alignment.TopCenter)) {
+                    SupportModeBanner(viewModel = viewModel)
+                }
+            }
+        }
+        return
+    }
     val missions by viewModel.missionsState.collectAsStateWithLifecycle()
     val achievements by viewModel.achievementsState.collectAsStateWithLifecycle()
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
@@ -107,7 +204,7 @@ fun PointlyBentoScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background, // Bento theme soft canvas
+        containerColor = Color.Transparent, // Make transparent so notebook background shows cleanly
         bottomBar = {
             PointlyBottomNavigation(
                 currentTab = currentTab,
@@ -118,8 +215,21 @@ fun PointlyBentoScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .notebookBackground(
+                    backgroundColor = MaterialTheme.colorScheme.background,
+                    gridColor = EditorialDesignSystem.gridColor(),
+                    marginColor = EditorialDesignSystem.marginColor()
+                )
                 .padding(innerPadding)
         ) {
+            if (isImpersonating) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                ) {
+                    SupportModeBanner(viewModel = viewModel)
+                }
+            }
             // Main views based on Tab state
             when (currentTab) {
                 0 -> BentoHomeTab(
@@ -196,19 +306,42 @@ fun PointlyBentoScreen(
             // Edit Profile Dialog
             if (isEditingProfile && profile != null) {
                 var editName by remember { mutableStateOf(profile!!.name) }
-                var editTitle by remember { mutableStateOf(profile!!.title) }
+                var editUsername by remember { mutableStateOf(profile!!.username) }
+                var editBio by remember { mutableStateOf(profile!!.bio) }
+                var editSchool by remember { mutableStateOf(profile!!.school) }
+                var editBoard by remember { mutableStateOf(profile!!.board) }
+                var editClass by remember { mutableStateOf(profile!!.className) }
+                var editSection by remember { mutableStateOf(profile!!.section) }
+                var editPrivacy by remember { mutableStateOf(profile!!.privacySetting) }
+                var visAchievements by remember { mutableStateOf(profile!!.visibleAchievements) }
+                var visPortfolio by remember { mutableStateOf(profile!!.visiblePortfolio) }
+                var visShowcase by remember { mutableStateOf(profile!!.visibleShowcase) }
+                var visStats by remember { mutableStateOf(profile!!.visibleStatistics) }
 
                 AlertDialog(
                     onDismissRequest = { viewModel.setEditingProfile(false) },
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                viewModel.updateProfileName(editName, editTitle)
+                                viewModel.updateFullProfile(
+                                    name = editName,
+                                    username = editUsername,
+                                    bio = editBio,
+                                    school = editSchool,
+                                    board = editBoard,
+                                    className = editClass,
+                                    section = editSection,
+                                    privacySetting = editPrivacy,
+                                    visibleAchievements = visAchievements,
+                                    visiblePortfolio = visPortfolio,
+                                    visibleShowcase = visShowcase,
+                                    visibleStatistics = visStats
+                                )
                                 viewModel.setEditingProfile(false)
                             },
                             modifier = Modifier.testTag("save_profile_button")
                         ) {
-                            Text("Save", fontWeight = FontWeight.Bold)
+                            Text("Save Portfolio", fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {
@@ -216,23 +349,130 @@ fun PointlyBentoScreen(
                             Text("Cancel")
                         }
                     },
-                    title = { Text("Update Student ID", fontWeight = FontWeight.SemiBold) },
+                    title = { Text("Update Student Profile", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge) },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
                             OutlinedTextField(
                                 value = editName,
                                 onValueChange = { editName = it },
-                                label = { Text("Student Name") },
+                                label = { Text("Full Name") },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("profile_name_input")
                             )
                             OutlinedTextField(
-                                value = editTitle,
-                                onValueChange = { editTitle = it },
-                                label = { Text("Academic Title / Tier") },
+                                value = editUsername,
+                                onValueChange = { editUsername = it },
+                                label = { Text("Username") },
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            OutlinedTextField(
+                                value = editBio,
+                                onValueChange = { editBio = it },
+                                label = { Text("Short Bio") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 3
+                            )
+                            OutlinedTextField(
+                                value = editSchool,
+                                onValueChange = { editSchool = it },
+                                label = { Text("School Name") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editBoard,
+                                onValueChange = { editBoard = it },
+                                label = { Text("Education Board") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = editClass,
+                                    onValueChange = { editClass = it },
+                                    label = { Text("Class") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = editSection,
+                                    onValueChange = { editSection = it },
+                                    label = { Text("Section") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Privacy Settings", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                            // Privacy Selector
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                listOf("Public", "School Only", "Friends Only", "Private").forEach { priv ->
+                                    val isSel = editPrivacy == priv
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable { editPrivacy = priv }
+                                            .padding(vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = priv.split(" ")[0],
+                                            color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Visibility toggles", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Achievements visible", fontSize = 12.sp)
+                                Switch(checked = visAchievements, onCheckedChange = { visAchievements = it })
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Portfolio visible", fontSize = 12.sp)
+                                Switch(checked = visPortfolio, onCheckedChange = { visPortfolio = it })
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Showcase posts visible", fontSize = 12.sp)
+                                Switch(checked = visShowcase, onCheckedChange = { visShowcase = it })
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Statistics visible", fontSize = 12.sp)
+                                Switch(checked = visStats, onCheckedChange = { visStats = it })
+                            }
                         }
                     },
                     shape = RoundedCornerShape(28.dp),
@@ -355,17 +595,27 @@ fun BentoHomeTab(
         ) {
             Column {
                 Text(
-                    text = "CURRENT STATUS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF6750A4),
+                    text = "01 / notebook",
+                    fontStyle = FontStyle.Italic,
+                    color = Color(0xFFFF5252), // Coral red handwritten label from inspiration
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
+                    fontSize = 14.sp
                 )
                 Text(
-                    text = "Pointly 77",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1D1B20)
+                    text = "POINTLY 77,",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "BUT MAKE IT SMART.",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-0.5).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
                 )
             }
 
@@ -417,21 +667,38 @@ fun BentoHomeTab(
 
         // --- BENTO GRID BLOCK 1: ACTIVE MISSION (FULL WIDTH) ---
         activeMission?.let { mission ->
-            Card(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("active_mission_card"),
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF6750A4)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    .editorialCard(
+                        rotation = -1.2f,
+                        containerColor = Color(0xFF1E1E24), // Slate-black editorial note background
+                        borderColor = MaterialTheme.colorScheme.outline,
+                        shadowColor = Color.Black.copy(alpha = 0.8f),
+                        shapeRadius = 12.dp,
+                        borderWidth = 2.5.dp,
+                        shadowOffset = 6.dp
+                    )
+                    .testTag("active_mission_card")
             ) {
+                // Editorial red sticky-pin pin-dot in top right corner
+                Box(
+                    modifier = Modifier
+                        .padding(14.dp)
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFF5252))
+                        .border(1.5.dp, Color.Black, CircleShape)
+                        .align(Alignment.TopEnd)
+                )
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .drawBehind {
                             // Circular subtle ambient glow behind the card
                             drawCircle(
-                                color = Color.White.copy(alpha = 0.08f),
+                                color = Color.White.copy(alpha = 0.04f),
                                 radius = 220.dp.toPx(),
                                 center = Offset(size.width * 0.95f, size.height * 0.1f)
                             )
@@ -450,21 +717,21 @@ fun BentoHomeTab(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFFD0BCFF))
+                                        .background(Color(0xFFFF8A80))
                                 )
                                 Text(
                                     text = "ACTIVE MISSION",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.2.sp,
-                                    color = Color(0xFFD0BCFF)
+                                    color = Color(0xFFFF8A80)
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = mission.title,
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 color = Color.White
                             )
                             Text(
@@ -483,9 +750,10 @@ fun BentoHomeTab(
                                 onClick = { viewModel.startStudySession(mission.subject, mission.title) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color.White,
-                                    contentColor = Color(0xFF6750A4)
+                                    contentColor = Color(0xFF1E1E24)
                                 ),
-                                shape = RoundedCornerShape(100.dp),
+                                shape = RoundedCornerShape(4.dp), // Squared brutalist buttons!
+                                border = BorderStroke(2.dp, Color.Black),
                                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                                 modifier = Modifier.testTag("resume_study_button")
                             ) {
@@ -525,18 +793,34 @@ fun BentoHomeTab(
         ) {
             // LEFT COLUMN: STREAK CARD (COL SPAN 2)
             profile?.let {
-                Card(
+                Box(
                     modifier = Modifier
                         .weight(1.1f)
                         .height(136.dp)
-                        .clickable {
-                            // Boost streak function for engagement fun
-                            viewModel.startStudySession("Physics", "Bernoulli's Principle")
-                        },
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFEADDFF)),
-                    border = BorderStroke(1.dp, Color(0xFFD0BCFF).copy(alpha = 0.3f))
+                        .editorialCard(
+                            rotation = 2.0f,
+                            containerColor = Color(0xFFFFD54F), // Sticky note yellow!
+                            borderColor = Color.Black,
+                            shadowColor = Color.Black.copy(alpha = 0.8f),
+                            shapeRadius = 8.dp,
+                            borderWidth = 2.2.dp,
+                            shadowOffset = 4.2.dp,
+                            onClick = {
+                                viewModel.startStudySession("Physics", "Bernoulli's Principle")
+                            }
+                        )
                 ) {
+                    // Small red dot pin inside top right
+                    Box(
+                        modifier = Modifier
+                            .padding(10.dp)
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF5252))
+                            .border(1.dp, Color.Black, CircleShape)
+                            .align(Alignment.TopEnd)
+                    )
+
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -553,14 +837,14 @@ fun BentoHomeTab(
                             text = "${it.streak}",
                             fontSize = 30.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF21005D),
+                            color = Color.Black,
                             lineHeight = 32.sp
                         )
                         Text(
                             text = "DAY STREAK",
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF21005D),
+                            color = Color.Black.copy(alpha = 0.8f),
                             letterSpacing = 0.8.sp
                         )
                     }
@@ -575,14 +859,20 @@ fun BentoHomeTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Stack A: Rank card
-                Card(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .clickable { viewModel.setTab(2) }, // Goes to leaderboards
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.1f))
+                        .editorialCard(
+                            rotation = -1.5f,
+                            containerColor = Color.White,
+                            borderColor = Color.Black,
+                            shadowColor = Color.Black.copy(alpha = 0.8f),
+                            shapeRadius = 6.dp,
+                            borderWidth = 2.dp,
+                            shadowOffset = 3.5.dp,
+                            onClick = { viewModel.setTab(2) }
+                        )
                 ) {
                     Row(
                         modifier = Modifier
@@ -595,7 +885,8 @@ fun BentoHomeTab(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(Color(0xFFF3EFE9))
+                                .border(1.5.dp, Color.Black, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("🏆", fontSize = 16.sp)
@@ -605,27 +896,33 @@ fun BentoHomeTab(
                                 text = "RANK",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF49454F)
+                                color = Color.Black.copy(alpha = 0.6f)
                             )
                             Text(
                                 text = "#${profile?.rank ?: 4}",
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1D1B20)
+                                fontWeight = FontWeight.Black,
+                                color = Color.Black
                             )
                         }
                     }
                 }
 
                 // Stack B: Level progress metric card
-                Card(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .clickable { viewModel.setTab(3) }, // Goes to profile/stats
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
-                    border = BorderStroke(1.dp, Color(0xFFE8DEF8))
+                        .editorialCard(
+                            rotation = 1.0f,
+                            containerColor = Color(0xFF90CAF9), // Sticky note blue!
+                            borderColor = Color.Black,
+                            shadowColor = Color.Black.copy(alpha = 0.8f),
+                            shapeRadius = 6.dp,
+                            borderWidth = 2.dp,
+                            shadowOffset = 3.5.dp,
+                            onClick = { viewModel.setTab(3) }
+                        )
                 ) {
                     Row(
                         modifier = Modifier
@@ -638,7 +935,8 @@ fun BentoHomeTab(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFFE8DEF8)),
+                                .background(Color.White)
+                                .border(1.5.dp, Color.Black, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("⚡", fontSize = 16.sp)
@@ -648,15 +946,15 @@ fun BentoHomeTab(
                                 text = "XP PROG",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF49454F)
+                                color = Color.Black.copy(alpha = 0.6f)
                             )
                             profile?.let {
                                 val progressPercent = ((it.xp.toFloat() / 2500f) * 100).toInt()
                                 Text(
                                     text = "$progressPercent%",
                                     fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1D1B20)
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.Black
                                 )
                             }
                         }
@@ -666,11 +964,18 @@ fun BentoHomeTab(
         }
 
         // --- BENTO GRID BLOCK 3: SOCIAL ACTIVITY & INVITE (COL SPAN 4) ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .editorialCard(
+                    rotation = -0.6f,
+                    containerColor = Color.White,
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 10.dp,
+                    borderWidth = 2.2.dp,
+                    shadowOffset = 4.dp
+                )
         ) {
             Row(
                 modifier = Modifier
@@ -685,7 +990,7 @@ fun BentoHomeTab(
                 ) {
                     // Overlapping Avatar Stack
                     Box(modifier = Modifier.width(72.dp)) {
-                        val colors = listOf(Color(0xFF6750A4), Color(0xFF7D5260), Color(0xFF21005D))
+                        val colors = listOf(Color(0xFFFFD54F), Color(0xFF90CAF9), Color(0xFFFF5252))
                         val initials = listOf("S", "M", "A")
                         for (i in 0 until 3) {
                             Box(
@@ -694,14 +999,14 @@ fun BentoHomeTab(
                                     .size(32.dp)
                                     .clip(CircleShape)
                                     .background(colors[i])
-                                    .border(1.5.dp, Color.White, CircleShape),
+                                    .border(1.5.dp, Color.Black, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     initials[i],
-                                    color = Color.White,
+                                    color = Color.Black,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp
+                                    fontSize = 11.sp
                                 )
                             }
                         }
@@ -712,8 +1017,8 @@ fun BentoHomeTab(
                     Text(
                         text = "Sarah & 2 others studying now",
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF1D1B20),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
                         modifier = Modifier.padding(start = 2.dp)
                     )
                 }
@@ -722,13 +1027,14 @@ fun BentoHomeTab(
                     onClick = onInviteClick,
                     modifier = Modifier
                         .size(32.dp)
-                        .background(Color(0xFFF3EDF7), CircleShape)
+                        .background(Color(0xFFF3EFE9), RoundedCornerShape(4.dp))
+                        .border(1.5.dp, Color.Black, RoundedCornerShape(4.dp))
                         .testTag("invite_squad_button")
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Add,
                         contentDescription = "Invite Squad",
-                        tint = Color(0xFF6750A4),
+                        tint = Color.Black,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -737,14 +1043,31 @@ fun BentoHomeTab(
 
         // --- BENTO GRID BLOCK 4: WEEKLY GOAL METRICS (COL SPAN 4) ---
         profile?.let { prof ->
-            Card(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { viewModel.contributeCommunityStudy() }, // Contribution interactive click
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF49454F)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    .editorialCard(
+                        rotation = 0.8f,
+                        containerColor = Color(0xFF1E1E24), // High contrast slate-black
+                        borderColor = Color.Black,
+                        shadowColor = Color.Black.copy(alpha = 0.8f),
+                        shapeRadius = 12.dp,
+                        borderWidth = 2.5.dp,
+                        shadowOffset = 5.dp,
+                        onClick = { viewModel.contributeCommunityStudy() }
+                    )
             ) {
+                // Pin dot in top right
+                Box(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFFFD54F))
+                        .border(1.dp, Color.Black, CircleShape)
+                        .align(Alignment.TopEnd)
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -758,9 +1081,9 @@ fun BentoHomeTab(
                     ) {
                         Text(
                             text = "WEEKLY STUDY GOAL",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFFFD54F),
                             letterSpacing = 1.sp
                         )
 
@@ -774,9 +1097,10 @@ fun BentoHomeTab(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp)),
-                                color = Color(0xFFD0BCFF),
-                                trackColor = Color.White.copy(alpha = 0.2f)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .border(1.dp, Color.Black, RoundedCornerShape(2.dp)),
+                                color = Color(0xFFFFD54F),
+                                trackColor = Color.White.copy(alpha = 0.15f)
                             )
                             Text(
                                 text = "%.1fh/%dh".format(prof.weeklyStudyHours, prof.weeklyGoalHours.toInt()),
@@ -792,7 +1116,8 @@ fun BentoHomeTab(
                     Box(
                         modifier = Modifier
                             .size(36.dp)
-                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                            .border(1.5.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text("📊", fontSize = 18.sp)
@@ -802,26 +1127,35 @@ fun BentoHomeTab(
         }
 
         // --- BENTO GRID BLOCK 5: FOCUS ZONE & POMODORO TIMER ---
-        Card(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { viewModel.setFocusZoneActive(true) }
-                .testTag("focus_zone_bento_card"),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8DEF8)),
-            border = BorderStroke(1.dp, Color(0xFFD0BCFF).copy(alpha = 0.4f)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                .editorialCard(
+                    rotation = -1.0f,
+                    containerColor = Color(0xFFF3EFE9), // Warm notebook-card grey
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 12.dp,
+                    borderWidth = 2.5.dp,
+                    shadowOffset = 5.dp,
+                    onClick = { viewModel.setFocusZoneActive(true) }
+                )
+                .testTag("focus_zone_bento_card")
         ) {
+            // Pin dot in top right
+            Box(
+                modifier = Modifier
+                    .padding(14.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFF5252))
+                    .border(1.dp, Color.Black, CircleShape)
+                    .align(Alignment.TopEnd)
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        drawCircle(
-                            color = Color(0xFF6750A4).copy(alpha = 0.04f),
-                            radius = 180.dp.toPx(),
-                            center = Offset(size.width * 0.1f, size.height * 0.8f)
-                        )
-                    }
                     .padding(20.dp)
             ) {
                 Row(
@@ -841,35 +1175,37 @@ fun BentoHomeTab(
                             Text(
                                 text = "POMODORO FOCUS ZONE",
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 letterSpacing = 1.2.sp,
-                                color = Color(0xFF6750A4)
+                                color = Color.Black
                             )
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Boost Your Productivity",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF21005D)
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black
                         )
                         Text(
                             text = "Customize study/break intervals, log offline study sessions, view deep local analytics, and receive ambient notifications.",
                             fontSize = 12.sp,
-                            color = Color(0xFF49454F)
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black.copy(alpha = 0.7f)
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Box(
                         modifier = Modifier
                             .size(52.dp)
-                            .background(Color(0xFF6750A4), RoundedCornerShape(16.dp)),
+                            .background(Color.White, RoundedCornerShape(4.dp))
+                            .border(2.5.dp, Color.Black, RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.PlayArrow,
                             contentDescription = "Open Focus Zone",
-                            tint = Color.White,
+                            tint = Color.Black,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -878,26 +1214,35 @@ fun BentoHomeTab(
         }
 
         // --- BENTO GRID BLOCK 6: SYLLABUS ENGINE CARD ---
-        Card(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onSyllabusClick() }
-                .testTag("syllabus_engine_bento_card"),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
-            border = BorderStroke(1.dp, Color(0xFFE8DEF8)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                .editorialCard(
+                    rotation = 1.2f,
+                    containerColor = Color.White,
+                    borderColor = Color.Black,
+                    shadowColor = Color.Black.copy(alpha = 0.8f),
+                    shapeRadius = 12.dp,
+                    borderWidth = 2.5.dp,
+                    shadowOffset = 5.dp,
+                    onClick = { onSyllabusClick() }
+                )
+                .testTag("syllabus_engine_bento_card")
         ) {
+            // Pin dot in top right
+            Box(
+                modifier = Modifier
+                    .padding(14.dp)
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF90CAF9))
+                    .border(1.dp, Color.Black, CircleShape)
+                    .align(Alignment.TopEnd)
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        drawCircle(
-                            color = Color(0xFF6750A4).copy(alpha = 0.05f),
-                            radius = 160.dp.toPx(),
-                            center = Offset(size.width * 0.9f, size.height * 0.8f)
-                        )
-                    }
                     .padding(20.dp)
             ) {
                 Row(
@@ -917,35 +1262,37 @@ fun BentoHomeTab(
                             Text(
                                 text = "SYLLABUS QUIZ ENGINE",
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 letterSpacing = 1.2.sp,
-                                color = Color(0xFF6750A4)
+                                color = Color.Black
                             )
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Class Syllabus Practice",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF21005D)
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black
                         )
                         Text(
                             text = "Daily smart quiz, subject-wise chapters, custom mock exams, bookmarks, weak topic revision & real-time CBSE sync.",
                             fontSize = 12.sp,
-                            color = Color(0xFF49454F)
+                            fontWeight = FontWeight.Medium,
+                            color = Color.Black.copy(alpha = 0.7f)
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Box(
                         modifier = Modifier
                             .size(52.dp)
-                            .background(Color(0xFF6750A4), RoundedCornerShape(16.dp)),
+                            .background(Color.White, RoundedCornerShape(4.dp))
+                            .border(2.5.dp, Color.Black, RoundedCornerShape(4.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.School,
                             contentDescription = "Open Syllabus Engine",
-                            tint = Color.White,
+                            tint = Color.Black,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -1512,10 +1859,13 @@ fun SocialLeaderboardTab(
                     shape = RoundedCornerShape(24.dp),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF6750A4),
-                        unfocusedBorderColor = Color(0xFF79747E).copy(alpha = 0.3f),
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
 
@@ -2148,10 +2498,14 @@ fun ProfileAchievementsTab(
     val dailyRewards by viewModel.dailyRewardsState.collectAsStateWithLifecycle()
     val shopItems by viewModel.shopItemsState.collectAsStateWithLifecycle()
 
-    var activeSubTab by remember { mutableStateOf("profile") } // profile, achievements, badges, challenges, shop
+    var activeSubTab by remember { mutableStateOf("profile") } // profile, statistics, timeline, portfolio, resume, achievements, badges, challenges, shop
     var achievementCategoryFilter by remember { mutableStateOf("All") }
     var shopCategoryFilter by remember { mutableStateOf("avatar_frame") } // avatar_frame, profile_theme, chat_bubble, profile_background, animated_decoration
     var badgeDetailDialog by remember { mutableStateOf<BadgeEntity?>(null) }
+    var portfolioFilter by remember { mutableStateOf("All") }
+    var showAddPortfolioDialog by remember { mutableStateOf(false) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
         modifier = Modifier
@@ -2170,10 +2524,15 @@ fun ProfileAchievementsTab(
         ) {
             val tabs = listOf(
                 "profile" to "👤 Overview",
+                "statistics" to "📊 Stats",
+                "timeline" to "📅 Timeline",
+                "portfolio" to "💼 Portfolio",
+                "resume" to "📝 Resume",
                 "achievements" to "🏆 Achievements",
                 "badges" to "🏅 Badges",
                 "challenges" to "⚡ Challenges",
-                "shop" to "🛒 Shop"
+                "shop" to "🛒 Shop",
+                "developer" to "🛠️ Dev Tools"
             )
             tabs.forEach { (key, label) ->
                 val selected = activeSubTab == key
@@ -2204,7 +2563,6 @@ fun ProfileAchievementsTab(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Core Profile display Card with Equipped Shop Cosmetics
                     profile?.let { prof ->
                         // Dynamic Theme Colors based on Shop Customization
                         val cardBg = when (prof.profileTheme) {
@@ -2215,25 +2573,65 @@ fun ProfileAchievementsTab(
                         val textColor = if (prof.profileTheme == "theme_dark") Color.White else Color(0xFF1D1B20)
                         val subTextColor = if (prof.profileTheme == "theme_dark") Color.White.copy(alpha = 0.7f) else Color(0xFF49454F)
 
+                        // 1. Core Profile Header Bento Card
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
+                            shape = RoundedCornerShape(28.dp),
                             colors = CardDefaults.cardColors(containerColor = cardBg),
-                            border = BorderStroke(
-                                2.dp,
-                                when (prof.profileTheme) {
-                                    "theme_dark" -> Color(0xFFBB86FC)
-                                    "theme_cherry" -> Color(0xFFFFB7C5)
-                                    else -> Color(0xFFE8DEF8)
-                                }
-                            )
+                            border = BorderStroke(1.dp, Color(0xFF6750A4).copy(alpha = 0.15f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(20.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                // Avatar Block with Custom Frames
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Custom Adaptive Banner Tag
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(Color(0xFF6750A4).copy(alpha = 0.1f))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "🎓 ${prof.board} Board",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF6750A4)
+                                        )
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { viewModel.setEditingProfile(true) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Edit,
+                                                contentDescription = "Edit Profile",
+                                                tint = Color(0xFF6750A4),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { viewModel.logout() },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ExitToApp,
+                                                contentDescription = "Sign Out",
+                                                tint = Color(0xFFBA1A1A),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
                                 Box(
                                     modifier = Modifier.size(80.dp),
                                     contentAlignment = Alignment.Center
@@ -2285,10 +2683,28 @@ fun ProfileAchievementsTab(
                                         color = textColor
                                     )
                                     Text(
-                                        text = prof.title,
-                                        fontSize = 14.sp,
-                                        color = if (prof.profileTheme == "theme_dark") Color(0xFFD0BCFF) else Color(0xFF6750A4),
-                                        fontWeight = FontWeight.Bold
+                                        text = "@${prof.username} • ${prof.className} - ${prof.section}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = subTextColor
+                                    )
+                                    Text(
+                                        text = prof.school,
+                                        fontSize = 12.sp,
+                                        color = subTextColor,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                    )
+                                }
+
+                                if (prof.bio.isNotEmpty()) {
+                                    Text(
+                                        text = prof.bio,
+                                        fontSize = 12.sp,
+                                        fontStyle = FontStyle.Italic,
+                                        color = textColor.copy(alpha = 0.8f),
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 12.dp)
                                     )
                                 }
 
@@ -2334,230 +2750,1203 @@ fun ProfileAchievementsTab(
                                         Text("${prof.gems}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = textColor)
                                     }
                                 }
+                            }
+                        }
 
+                        // 2. Academic Skills Section (Phase 6)
+                        Text(
+                            text = "⚡ Academic Skills Tracking",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                val skills = listOf(
+                                    Triple("Mathematics", prof.mathSkill, Color(0xFF4CAF50)),
+                                    Triple("Science", prof.scienceSkill, Color(0xFF2196F3)),
+                                    Triple("English", prof.englishSkill, Color(0xFFFF9800)),
+                                    Triple("Coding", prof.codingSkill, Color(0xFF9C27B0)),
+                                    Triple("Communication", prof.commSkill, Color(0xFF3F51B5)),
+                                    Triple("Creativity", prof.creativitySkill, Color(0xFFE91E63)),
+                                    Triple("Leadership", prof.leadershipSkill, Color(0xFF00BCD4)),
+                                    Triple("Problem Solving", prof.problemSolvingSkill, Color(0xFF009688))
+                                )
+
+                                skills.forEach { (name, progress, color) ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(name, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF1D1B20))
+                                            Text("${(progress * 100).toInt()}%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color)
+                                        }
+                                        LinearProgressIndicator(
+                                            progress = progress,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(6.dp)
+                                                .clip(RoundedCornerShape(100.dp)),
+                                            color = color,
+                                            trackColor = color.copy(alpha = 0.15f)
+                                        )
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = "💡 Skills are auto-calculated from active Pomodoro sessions, quiz completion score, and syllabus progression milestones.",
+                                    fontSize = 11.sp,
+                                    fontStyle = FontStyle.Italic,
+                                    color = Color(0xFF49454F)
+                                )
+                            }
+                        }
+
+                        // 3. Followers / Friend Interactions (Phase 7)
+                        Text(
+                            text = "👥 Classmates & Following",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.padding(top = 8.dp)
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    Button(
-                                        onClick = { viewModel.setEditingProfile(true) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF6750A4)),
-                                        shape = RoundedCornerShape(100.dp),
-                                        border = BorderStroke(1.dp, Color(0xFFD0BCFF))
+                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Followers", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("${prof.followersCount}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                    }
+                                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Following", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("${prof.followingCount}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                    }
+                                    Column(modifier = Modifier.weight(1.2f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Mutual Friends", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("8 Classmates", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                Text("Suggested schoolfriends", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+
+                                val suggestedClassmates = listOf(
+                                    Triple("Anjali Sharma", "anjali_s", "Same Class"),
+                                    Triple("Rohan Verma", "rohan_v", "Same School"),
+                                    Triple("Sana Khan", "sana_k", "Mutual Friend")
+                                )
+
+                                suggestedClassmates.forEach { (fname, uname, relation) ->
+                                    var followedState by remember { mutableStateOf(false) }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Edit Profile", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFFEADDFF)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(fname.substring(0, 1), fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                            }
+                                            Column {
+                                                Text(fname, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+                                                Text("@$uname • $relation", fontSize = 10.sp, color = Color(0xFF49454F))
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                followedState = !followedState
+                                                viewModel.toggleFollowUser(uname, !followedState)
+                                                viewModel.postSystemNotification(
+                                                    "New Friendship!",
+                                                    "${if (followedState) "followed" else "unfollowed"} @$uname successfully!",
+                                                    "friend_follow"
+                                                )
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (followedState) Color(0xFFE8F5E9) else Color(0xFF6750A4)
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Text(
+                                                text = if (followedState) "Following" else "Follow",
+                                                fontSize = 11.sp,
+                                                color = if (followedState) Color(0xFF2E7D32) else Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Privacy & Sharing (Phases 8 & 9)
+                        Text(
+                            text = "🔗 Share Profile & Privacy",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("Profile Visibility", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text(prof.privacySetting, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
                                     }
 
-                                    Button(
-                                        onClick = { viewModel.logout() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFECEF), contentColor = Color(0xFFBA1A1A)),
-                                        shape = RoundedCornerShape(100.dp),
-                                        border = BorderStroke(1.dp, Color(0xFFFFDAD6))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(100.dp))
+                                            .background(Color(0xFFE8F5E9))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ExitToApp,
-                                            contentDescription = "Sign Out",
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Sign Out", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("SECURE SSL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    }
+                                }
+
+                                HorizontalDivider()
+
+                                Text(
+                                    text = "Scan QR to view Portfolio",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D1B20)
+                                )
+
+                                // Custom Canvas-drawn QR Code (Phase 9)
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.5.dp, Color.Black.copy(alpha = 0.1f)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    androidx.compose.foundation.Canvas(
+                                        modifier = Modifier
+                                            .size(130.dp)
+                                            .padding(12.dp)
+                                    ) {
+                                        // Draw 3 Finder Patterns
+                                        drawRect(color = Color.Black, size = androidx.compose.ui.geometry.Size(32f, 32f), topLeft = androidx.compose.ui.geometry.Offset(0f, 0f))
+                                        drawRect(color = Color.White, size = androidx.compose.ui.geometry.Size(16f, 16f), topLeft = androidx.compose.ui.geometry.Offset(8f, 8f))
+                                        
+                                        drawRect(color = Color.Black, size = androidx.compose.ui.geometry.Size(32f, 32f), topLeft = androidx.compose.ui.geometry.Offset(size.width - 32f, 0f))
+                                        drawRect(color = Color.White, size = androidx.compose.ui.geometry.Size(16f, 16f), topLeft = androidx.compose.ui.geometry.Offset(size.width - 24f, 8f))
+                                        
+                                        drawRect(color = Color.Black, size = androidx.compose.ui.geometry.Size(32f, 32f), topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 32f))
+                                        drawRect(color = Color.White, size = androidx.compose.ui.geometry.Size(16f, 16f), topLeft = androidx.compose.ui.geometry.Offset(8f, size.height - 24f))
+
+                                        // Fake high-density random QR matrix
+                                        val random = java.util.Random(prof.username.hashCode().toLong())
+                                        for (x in 0..16) {
+                                            for (y in 0..16) {
+                                                // Skip Finder patterns
+                                                if ((x < 5 && y < 5) || (x > 11 && y < 5) || (x < 5 && y > 11)) continue
+                                                if (random.nextBoolean()) {
+                                                    drawRect(
+                                                        color = Color.Black,
+                                                        size = androidx.compose.ui.geometry.Size(7f, 7f),
+                                                        topLeft = androidx.compose.ui.geometry.Offset(x * 7f + 6f, y * 7f + 6f)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Pointly Profile Link", "https://pointly77.app/student/${prof.username}")
+                                            clipboard.setPrimaryClip(clip)
+                                            android.widget.Toast.makeText(context, "Profile link copied successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(100.dp)
+                                    ) {
+                                        Text("Copy Profile Link", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(android.content.Intent.EXTRA_SUBJECT, "View ${prof.name}'s Academic Portfolio")
+                                                putExtra(android.content.Intent.EXTRA_TEXT, "Hey! Check out my student portfolio on Pointly 77 AI Study Companion: https://pointly77.app/student/${prof.username} 🚀")
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Portfolio"))
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(100.dp)
+                                    ) {
+                                        Text("Share Portfolio", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Theme settings and rewards at the bottom
+                        val currentTheme by viewModel.appTheme.collectAsStateWithLifecycle()
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "🎨 Application Theme Settings",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "Choose your preferred system theme configuration.",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val themes = listOf("Light" to "☀️ Light", "Dark" to "🌙 Dark", "System" to "⚙️ System")
+                                    themes.forEach { (key, label) ->
+                                        val isSelected = currentTheme == key
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(100.dp))
+                                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { viewModel.setAppTheme(key) }
+                                                .padding(vertical = 10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "📅 Daily Login Rewards",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1D1B20)
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text(
+                                    text = "Login every day consecutively to increase coin, XP multipliers and claim legendary gemstone caches!",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF49454F)
+                                )
+
+                                // 7 Days Grid
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    (1..7).forEach { day ->
+                                        val reward = dailyRewards.find { it.day == day }
+                                        val claimed = reward?.claimed == true
+                                        val isCurrent = reward != null && !claimed && (prof.consecutiveLoginDays ?: 0) + 1 == day
+
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(
+                                                    if (isCurrent) Color(0xFFEADDFF)
+                                                    else if (claimed) Color(0xFFE8F5E9)
+                                                    else Color(0xFFF4F4F6)
+                                                )
+                                                .border(
+                                                    width = if (isCurrent) 1.5.dp else 0.dp,
+                                                    color = if (isCurrent) Color(0xFF6750A4) else Color.Transparent,
+                                                    shape = RoundedCornerShape(12.dp)
+                                                )
+                                                .clickable(enabled = isCurrent) {
+                                                    viewModel.claimDailyReward(day)
+                                                }
+                                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text("Day $day", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF49454F))
+                                            Text(
+                                                text = if (day % 7 == 0) "💎" else "🪙",
+                                                fontSize = 16.sp
+                                            )
+                                            if (claimed) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = "Claimed",
+                                                    tint = Color(0xFF2E7D32),
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            } else if (isCurrent) {
+                                                Text("CLAIM", fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
+                                            } else {
+                                                Text("+${reward?.coinReward ?: 20}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF79747E))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                viewModel.earnCoins(100)
+                                                viewModel.postSystemNotification(
+                                                    "Lucky Spin Wheel!",
+                                                    "spun the lucky spinner wheel and struck the jackpot of +100 Golden Coins!",
+                                                    "lucky_spin"
+                                                )
+                                            },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
+                                        border = BorderStroke(1.dp, Color(0xFFFFF59D))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("🎡", fontSize = 24.sp)
+                                            Column {
+                                                Text("Lucky Spin", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF57F17))
+                                                Text("Spin Wheel Free", fontSize = 10.sp, color = Color(0xFF855C00))
+                                            }
+                                        }
+                                    }
+
+                                    Card(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                viewModel.earnGems(5)
+                                                viewModel.postSystemNotification(
+                                                    "Mystery Loot Chest!",
+                                                    "unlocked the milestone silver chest and obtained +5 Gemstones!",
+                                                    "loot_chest"
+                                                )
+                                            },
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFECEFF1)),
+                                        border = BorderStroke(1.dp, Color(0xFFCFD8DC))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text("📦", fontSize = 24.sp)
+                                            Column {
+                                                Text("Loot Chest", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF37474F))
+                                                Text("Claim Chest Free", fontSize = 10.sp, color = Color(0xFF455A64))
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    
-                    // --- Theme Settings Card ---
-                    val currentTheme by viewModel.appTheme.collectAsStateWithLifecycle()
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            "statistics" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    profile?.let { prof ->
+                        Text(
+                            text = "📊 Academic Statistics Dashboard",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        // M3 Bento Layout
+                        // Card 1: Study hours
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEADDFF).copy(alpha = 0.4f)),
+                            border = BorderStroke(1.dp, Color(0xFF6750A4).copy(alpha = 0.12f))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("⏱️", fontSize = 20.sp)
+                                    Text("Study Duration Analytics", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF6750A4))
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Weekly Study", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("${prof.weeklyStudyHours} hrs", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column {
+                                        Text("Monthly Study", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("${prof.weeklyStudyHours * 4.2f} hrs", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column {
+                                        Text("Daily Goal Status", fontSize = 11.sp, color = Color(0xFF49454F))
+                                        Text("${((prof.weeklyStudyHours / prof.weeklyGoalHours) * 100).toInt()}% Done", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bento Rows
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Card 2: Quiz statistics
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("📝 Quiz Completion", fontSize = 11.sp, color = Color(0xFF49454F))
+                                    Text("38 Quizzes", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text("Avg score: 84%", fontSize = 10.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // Card 3: Pomodoro Sessions
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("🍅 Pomodoros", fontSize = 11.sp, color = Color(0xFF49454F))
+                                    Text("42 Sessions", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text("Avg length: 25 mins", fontSize = 10.sp, color = Color(0xFF6750A4), fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Card 4: Subject Accuracy chart drawn via Canvas
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Text("🎯 Subject Accuracy Breakdown", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+
+                                androidx.compose.foundation.Canvas(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(130.dp)
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    val barWidth = 40f
+                                    val gap = (size.width - (barWidth * 5)) / 6
+                                    val subjects = listOf(
+                                        "Math" to 0.85f,
+                                        "Science" to 0.78f,
+                                        "English" to 0.92f,
+                                        "History" to 0.70f,
+                                        "Coding" to 0.65f
+                                    )
+
+                                    // Draw background lines
+                                    for (i in 0..4) {
+                                        val y = size.height * (i / 4f)
+                                        drawLine(
+                                            color = Color.LightGray.copy(alpha = 0.3f),
+                                            start = androidx.compose.ui.geometry.Offset(0f, y),
+                                            end = androidx.compose.ui.geometry.Offset(size.width, y),
+                                            strokeWidth = 2f
+                                        )
+                                    }
+
+                                    subjects.forEachIndexed { index, (name, score) ->
+                                        val x = gap + index * (barWidth + gap)
+                                        val barHeight = size.height * score
+                                        val y = size.height - barHeight
+
+                                        // Draw filled bar
+                                        drawRect(
+                                            color = when (index) {
+                                                0 -> Color(0xFF4CAF50)
+                                                1 -> Color(0xFF2196F3)
+                                                2 -> Color(0xFFFF9800)
+                                                3 -> Color(0xFFE91E63)
+                                                else -> Color(0xFF9C27B0)
+                                            },
+                                            size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                                            topLeft = androidx.compose.ui.geometry.Offset(x, y)
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    listOf("Math" to "🟢", "Science" to "🔵", "English" to "🟡", "History" to "🔴", "Coding" to "🟣").forEach { (sub, emoji) ->
+                                        Text("$emoji $sub", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF49454F))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            "timeline" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     Text(
-                        text = "🎨 Application Theme Settings",
+                        text = "📅 Academic Milestone Timeline",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                text = "Choose your preferred system theme configuration.",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    val milestones = listOf(
+                        Triple("🏆 Milestone Unlocked!", "Achieved study streak milestone of 77 Days consecutively on Pointly!", "Today"),
+                        Triple("🎉 level Up Reached!", "Graduated and promoted to Level 14 after gaining +100 XP!", "Yesterday"),
+                        Triple("🏅 Scholar Badge Earned!", "Successfully answered 20 Quiz questions in Mathematics with >90% accuracy!", "3 days ago"),
+                        Triple("💼 Portfolio Post Uploaded!", "Published a public project: Science Model of Fluid Dynamics!", "5 days ago"),
+                        Triple("✨ Gold Tier Reached!", "Earned cumulative rank #4 across Bento schoolwide leaderboard!", "1 week ago")
+                    )
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val themes = listOf("Light" to "☀️ Light", "Dark" to "🌙 Dark", "System" to "⚙️ System")
-                                themes.forEach { (key, label) ->
-                                    val isSelected = currentTheme == key
+                    milestones.forEachIndexed { index, (title, desc, date) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF6750A4))
+                                )
+                                if (index < milestones.size - 1) {
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(100.dp))
-                                            .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                                            .clickable { viewModel.setAppTheme(key) }
-                                            .padding(vertical = 10.dp),
-                                        contentAlignment = Alignment.Center
+                                            .width(2.dp)
+                                            .height(70.dp)
+                                            .background(Color(0xFF6750A4).copy(alpha = 0.3f))
+                                    )
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.12f))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = label,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        )
+                                        Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF6750A4))
+                                        Text(date, fontSize = 10.sp, color = Color(0xFF79747E))
+                                    }
+                                    Text(desc, fontSize = 11.sp, color = Color(0xFF49454F))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            "portfolio" -> {
+                val showcasePosts by viewModel.showcasePosts.collectAsStateWithLifecycle()
+                val studentPosts = showcasePosts.filter { it.authorUsername == (profile?.username ?: "") }
+                var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+                val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+                    contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    selectedFileUri = uri
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "💼 Showcase Portfolio Work",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+
+                        Button(
+                            onClick = { showAddPortfolioDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                            shape = RoundedCornerShape(100.dp),
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+                        ) {
+                            Text("+ Upload Work", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Filters
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("All", "Project", "Certificate", "Drawing", "Notes", "Coding", "PDF", "Image").forEach { cat ->
+                            val sel = portfolioFilter == cat
+                            FilterChip(
+                                selected = sel,
+                                onClick = { portfolioFilter = cat },
+                                label = { Text(cat, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+
+                    val filteredShowcase = studentPosts.filter {
+                        portfolioFilter == "All" || it.category.equals(portfolioFilter, ignoreCase = true)
+                    }
+
+                    if (filteredShowcase.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.12f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("📁", fontSize = 32.sp)
+                                Text("Empty Student Portfolio", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("You haven't uploaded any portfolio projects in this category yet. Click '+ Upload Work' to publish certificates, models or coding projects!", fontSize = 11.sp, color = Color(0xFF49454F), textAlign = TextAlign.Center)
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            filteredShowcase.forEach { post ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Text("📂", fontSize = 16.sp)
+                                                Text(post.category.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4), modifier = Modifier.background(Color(0xFFEADDFF), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                            Text(
+                                                text = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(post.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF79747E)
+                                            )
+                                        }
+
+                                        Text(post.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1D1B20))
+                                        Text(post.description, fontSize = 11.sp, color = Color(0xFF49454F), lineHeight = 15.sp)
+
+                                        if (post.fileUrl.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(140.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(Color(0xFFF3EDF7)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                var isPortfolioImgFailed by remember { mutableStateOf(false) }
+                                                if (!isPortfolioImgFailed) {
+                                                    AsyncImage(
+                                                        model = post.fileUrl,
+                                                        contentDescription = "Portfolio attachment preview",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop,
+                                                        onError = { isPortfolioImgFailed = true }
+                                                     )
+                                                }
+                                                if (isPortfolioImgFailed) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(12.dp)) {
+                                                        Icon(Icons.Rounded.Attachment, contentDescription = null, tint = Color(0xFF6750A4), modifier = Modifier.size(24.dp))
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text("Attachment", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFF49454F))
+                                                        Text(post.fileUrl.take(30) + "...", fontSize = 9.sp, color = Color.Gray)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Text("❤️ ${post.likesCount} Likes", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE91E63))
+                                                Text("💬 ${post.commentsCount} Comments", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                        type = "text/plain"
+                                                        putExtra(android.content.Intent.EXTRA_TEXT, "Take a look at my project \"${post.title}\" on Pointly 77: ${post.fileUrl}")
+                                                    }
+                                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Work"))
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(imageVector = Icons.Rounded.Share, contentDescription = "Share", tint = Color(0xFF6750A4), modifier = Modifier.size(14.dp))
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // --- Phase 4: Daily rewards Calendar ---
-                    Text(
-                        text = "📅 Daily Login Rewards",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1D1B20)
-                    )
+                    // Upload Portfolio dialog
+                    if (showAddPortfolioDialog) {
+                        var fileTitle by remember { mutableStateOf("") }
+                        var fileDesc by remember { mutableStateOf("") }
+                        var fileCategory by remember { mutableStateOf("Project") }
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        border = BorderStroke(1.dp, Color(0xFF79747E).copy(alpha = 0.15f))
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                text = "Login every day consecutively to increase coin, XP multipliers and claim legendary gemstone caches!",
-                                fontSize = 12.sp,
-                                color = Color(0xFF49454F)
-                            )
+                        AlertDialog(
+                            onDismissRequest = {
+                                selectedFileUri = null
+                                showAddPortfolioDialog = false
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        if (fileTitle.isNotEmpty()) {
+                                            viewModel.createShowcasePost(
+                                                title = fileTitle,
+                                                description = fileDesc,
+                                                category = fileCategory,
+                                                uri = selectedFileUri,
+                                                mockFileName = "portfolio_work.png"
+                                            )
+                                            viewModel.earnXp(50)
+                                            viewModel.earnCoins(25)
+                                            viewModel.postSystemNotification(
+                                                "Portfolio Uploaded!",
+                                                "successfully published \"$fileTitle\" to your student portfolio! +50 XP, +25 Coins!",
+                                                "portfolio_upload"
+                                            )
+                                        }
+                                        selectedFileUri = null
+                                        showAddPortfolioDialog = false
+                                    }
+                                ) {
+                                    Text("Publish", fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    selectedFileUri = null
+                                    showAddPortfolioDialog = false
+                                }) {
+                                    Text("Cancel")
+                                }
+                            },
+                            title = { Text("Upload Portfolio Work", fontWeight = FontWeight.SemiBold) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    OutlinedTextField(
+                                        value = fileTitle,
+                                        onValueChange = { fileTitle = it },
+                                        label = { Text("Project / Certificate Title") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    OutlinedTextField(
+                                        value = fileDesc,
+                                        onValueChange = { fileDesc = it },
+                                        label = { Text("Description") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        maxLines = 3
+                                    )
 
-                            // 7 Days Grid
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                (1..7).forEach { day ->
-                                    val reward = dailyRewards.find { it.day == day }
-                                    val claimed = reward?.claimed == true
-                                    val isCurrent = reward != null && !claimed && (profile?.consecutiveLoginDays ?: 0) + 1 == day
-
-                                    Column(
+                                    Text("Category / Material Type", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Row(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (isCurrent) Color(0xFFEADDFF)
-                                                else if (claimed) Color(0xFFE8F5E9)
-                                                else Color(0xFFF4F4F6)
-                                            )
-                                            .border(
-                                                width = if (isCurrent) 1.5.dp else 0.dp,
-                                                color = if (isCurrent) Color(0xFF6750A4) else Color.Transparent,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable(enabled = isCurrent) {
-                                                viewModel.claimDailyReward(day)
-                                            }
-                                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Text("Day $day", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF49454F))
-                                        Text(
-                                            text = if (day % 7 == 0) "💎" else "🪙",
-                                            fontSize = 16.sp
-                                        )
-                                        if (claimed) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = "Claimed",
-                                                tint = Color(0xFF2E7D32),
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                        } else if (isCurrent) {
-                                            Text("CLAIM", fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
-                                        } else {
-                                            Text("+${reward?.coinReward ?: 20}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF79747E))
+                                        listOf("Project", "Certificate", "Drawing", "Notes", "Coding", "PDF", "Image").forEach { cat ->
+                                            val s = fileCategory == cat
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (s) Color(0xFF6750A4) else Color(0xFFEEEEEE))
+                                                    .clickable { fileCategory = cat }
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Text(cat, color = if (s) Color.White else Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Button(
+                                        onClick = { launcher.launch("*/*") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE8DEF8), contentColor = Color(0xFF21005D)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Rounded.UploadFile, contentDescription = "Attach file")
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(if (selectedFileUri != null) "File Attached! ✅" else "Attach Project File / Image")
+                                    }
+
+                                    if (selectedFileUri != null) {
+                                        Text("Attachment Preview:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(100.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFFE8DEF8).copy(alpha = 0.5f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            var isPreviewFailed by remember { mutableStateOf(false) }
+                                            if (!isPreviewFailed) {
+                                                AsyncImage(
+                                                    model = selectedFileUri,
+                                                    contentDescription = "Selected image preview",
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop,
+                                                    onError = { isPreviewFailed = true }
+                                                )
+                                            }
+                                            if (isPreviewFailed) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF6750A4), modifier = Modifier.size(24.dp))
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text("Attached file", fontSize = 11.sp, color = Color.Gray)
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
+                        )
+                    }
+                }
+            }
 
-                            // Interactive Playful elements: Free Lucky Spin Wheel & Mystery Loot Chest placeholders
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            "resume" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    profile?.let { prof ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "📝 Academic Resume Generator",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+
+                            Button(
+                                onClick = {
+                                    try {
+                                        val pdfDocument = android.graphics.pdf.PdfDocument()
+                                        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 Size
+                                        val page = pdfDocument.startPage(pageInfo)
+                                        val canvas = page.canvas
+                                        val paint = android.graphics.Paint()
+
+                                        // Draw title
+                                        paint.color = android.graphics.Color.DKGRAY
+                                        paint.textSize = 24f
+                                        paint.isFakeBoldText = true
+                                        canvas.drawText("ACADEMIC RESUME & STUDENT PORTFOLIO", 50f, 60f, paint)
+
+                                        // Draw line
+                                        paint.color = android.graphics.Color.LTGRAY
+                                        canvas.drawLine(50f, 75f, 545f, 75f, paint)
+
+                                        // Draw details
+                                        paint.color = android.graphics.Color.BLACK
+                                        paint.textSize = 14f
+                                        paint.isFakeBoldText = false
+                                        var yPos = 110f
+                                        canvas.drawText("Name: ${prof.name}", 50f, yPos, paint); yPos += 25f
+                                        canvas.drawText("Username: @${prof.username}", 50f, yPos, paint); yPos += 25f
+                                        canvas.drawText("Class & Section: ${prof.className} - ${prof.section}", 50f, yPos, paint); yPos += 25f
+                                        canvas.drawText("School: ${prof.school}", 50f, yPos, paint); yPos += 25f
+                                        canvas.drawText("Board: ${prof.board}", 50f, yPos, paint); yPos += 25f
+                                        canvas.drawText("Join Date: ${prof.joinDate}", 50f, yPos, paint); yPos += 30f
+
+                                        paint.textSize = 16f
+                                        paint.isFakeBoldText = true
+                                        paint.color = android.graphics.Color.BLUE
+                                        canvas.drawText("ACADEMIC STATISTICS", 50f, yPos, paint); yPos += 20f
+                                        paint.textSize = 12f
+                                        paint.isFakeBoldText = false
+                                        paint.color = android.graphics.Color.BLACK
+                                        canvas.drawText("Level: ${prof.level} (${prof.xp}/2500 XP)", 50f, yPos, paint); yPos += 20f
+                                        canvas.drawText("Study Streak: ${prof.streak} Days", 50f, yPos, paint); yPos += 20f
+                                        canvas.drawText("Rank: #${prof.rank}", 50f, yPos, paint); yPos += 20f
+                                        canvas.drawText("Total Study Hours: ${prof.totalStudyHours} hrs", 50f, yPos, paint); yPos += 30f
+
+                                        paint.textSize = 16f
+                                        paint.isFakeBoldText = true
+                                        paint.color = android.graphics.Color.BLUE
+                                        canvas.drawText("SUBJECT & SKILLS", 50f, yPos, paint); yPos += 20f
+                                        paint.textSize = 12f
+                                        paint.isFakeBoldText = false
+                                        paint.color = android.graphics.Color.BLACK
+                                        canvas.drawText("Mathematics: ${(prof.mathSkill * 100).toInt()}%", 50f, yPos, paint)
+                                        canvas.drawText("Science: ${(prof.scienceSkill * 100).toInt()}%", 300f, yPos, paint); yPos += 20f
+                                        canvas.drawText("English: ${(prof.englishSkill * 100).toInt()}%", 50f, yPos, paint)
+                                        canvas.drawText("Coding: ${(prof.codingSkill * 100).toInt()}%", 300f, yPos, paint); yPos += 20f
+                                        canvas.drawText("Communication: ${(prof.commSkill * 100).toInt()}%", 50f, yPos, paint)
+                                        canvas.drawText("Problem Solving: ${(prof.problemSolvingSkill * 100).toInt()}%", 300f, yPos, paint); yPos += 30f
+
+                                        // Footer
+                                        paint.color = android.graphics.Color.GRAY
+                                        paint.textSize = 10f
+                                        canvas.drawText("Generated via Pointly 77 AI Study Companion on " + java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date()), 50f, 800f, paint)
+
+                                        pdfDocument.finishPage(page)
+
+                                        // Save PDF to cache or external storage and share it
+                                        val file = java.io.File(context.cacheDir, "academic_resume_${prof.username}.pdf")
+                                        val outputStream = java.io.FileOutputStream(file)
+                                        pdfDocument.writeTo(outputStream)
+                                        pdfDocument.close()
+                                        outputStream.close()
+
+                                        // Trigger Android Share Intent for PDF
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            "com.example.provider",
+                                            file
+                                        )
+                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Resume PDF"))
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Error generating PDF: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                shape = RoundedCornerShape(100.dp),
+                                modifier = Modifier.height(34.dp)
                             ) {
-                                Card(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            viewModel.earnCoins(100)
-                                            viewModel.postSystemNotification(
-                                                "Lucky Spin Wheel!",
-                                                "spun the lucky spinner wheel and struck the jackpot of +100 Golden Coins!",
-                                                "lucky_spin"
-                                            )
-                                        },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
-                                    border = BorderStroke(1.dp, Color(0xFFFFF59D))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Text("📄 Export A4 PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Beautiful interactive Print Preview Paper Card
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(2.dp, Color.Black.copy(alpha = 0.08f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                    Text("ACADEMIC RESUME & STUDENT PORTFOLIO", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                    Text("POINTLY 77 STUDY COMPANION PORTFOLIO SYSTEM", fontSize = 9.sp, fontWeight = FontWeight.Medium, color = Color.Gray)
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                }
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text("STUDENT ID DETAILS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                        Text("Name: ${prof.name}", fontSize = 12.sp, color = Color.Black)
+                                        Text("Username: @${prof.username}", fontSize = 11.sp, color = Color.DarkGray)
+                                        Text("School: ${prof.school}", fontSize = 11.sp, color = Color.DarkGray)
+                                        Text("Board: ${prof.board} (CBSE)", fontSize = 11.sp, color = Color.DarkGray)
+                                        Text("Class & Sec: ${prof.className} - ${prof.section}", fontSize = 11.sp, color = Color.DarkGray)
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFEADDFF)),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Text("🎡", fontSize = 24.sp)
-                                        Column {
-                                            Text("Lucky Spin", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF57F17))
-                                            Text("Spin Wheel Free", fontSize = 10.sp, color = Color(0xFF855C00))
+                                        Text(prof.name.substring(0, 1), fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
+                                    }
+                                }
+
+                                HorizontalDivider()
+
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("ACADEMIC MILESTONES & CORE METRICS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                    Text("• Current Academic level: Reached Level ${prof.level} (${prof.xp}/2500 XP)", fontSize = 11.sp, color = Color.Black)
+                                    Text("• Study Streak Milestones: Maintained streak of ${prof.streak} Days consecutively", fontSize = 11.sp, color = Color.Black)
+                                    Text("• Cumulative Rank: Achieved leaderboard index #${prof.rank} schoolwide", fontSize = 11.sp, color = Color.Black)
+                                    Text("• Focused Study hours: Logged a total of ${prof.totalStudyHours.toInt()} hours of focused learning", fontSize = 11.sp, color = Color.Black)
+                                }
+
+                                HorizontalDivider()
+
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("COGNITIVE & ACADEMIC SKILLS PROFILE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                                    
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text("Mathematics: ${(prof.mathSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Science: ${(prof.scienceSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("English: ${(prof.englishSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Coding: ${(prof.codingSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text("Communication: ${(prof.commSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Creativity: ${(prof.creativitySkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Leadership: ${(prof.leadershipSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text("Problem Solving: ${(prof.problemSolvingSkill*100).toInt()}%", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
 
-                                Card(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            viewModel.earnGems(5)
-                                            viewModel.postSystemNotification(
-                                                "Mystery Loot Chest!",
-                                                "unlocked the milestone silver chest and obtained +5 Gemstones!",
-                                                "loot_chest"
-                                            )
-                                        },
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFECEFF1)),
-                                    border = BorderStroke(1.dp, Color(0xFFCFD8DC))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text("📦", fontSize = 24.sp)
-                                        Column {
-                                            Text("Loot Chest", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF37474F))
-                                            Text("Claim Chest Free", fontSize = 10.sp, color = Color(0xFF455A64))
-                                        }
-                                    }
-                                }
+                                HorizontalDivider()
+
+                                Text(
+                                    text = "Generated securely via Pointly 77 Student Portfolio System.",
+                                    fontSize = 9.sp,
+                                    fontStyle = FontStyle.Italic,
+                                    color = Color.Gray,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                )
                             }
                         }
                     }
@@ -3205,6 +4594,176 @@ fun ProfileAchievementsTab(
                     }
                 }
             }
+            "developer" -> {
+                val lastSyncTime by viewModel.lastSyncTimeFlow.collectAsStateWithLifecycle()
+                val pendingUploads by viewModel.pendingUploadsCountFlow.collectAsStateWithLifecycle()
+                val pendingDownloads by viewModel.pendingDownloadsCountFlow.collectAsStateWithLifecycle()
+                val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+                val dbSize = viewModel.getLocalDatabaseSize()
+                val formattedSize = "%.2f MB".format(dbSize.toFloat() / (1024 * 1024))
+                val formattedTime = if (lastSyncTime > 0L) {
+                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(lastSyncTime))
+                } else "Never"
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .background(Color(0xFFFBF8FD), RoundedCornerShape(24.dp))
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "🛠️ Offline-First Storage Engine",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6750A4)
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("Local Database Size", fontSize = 11.sp, color = Color(0xFF79747E), fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(formattedSize, fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("Cloud Sync Status", fontSize = 11.sp, color = Color(0xFF79747E), fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = when (syncState) {
+                                            is com.example.data.repository.SyncManager.SyncState.Syncing -> "SYNCING"
+                                            is com.example.data.repository.SyncManager.SyncState.Synced -> "IN SYNC"
+                                            is com.example.data.repository.SyncManager.SyncState.Error -> "ERROR"
+                                            else -> "IDLE"
+                                        },
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (syncState is com.example.data.repository.SyncManager.SyncState.Error) Color(0xFFBA1A1A) else Color(0xFF6750A4)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("Pending Uploads", fontSize = 11.sp, color = Color(0xFF79747E), fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("$pendingUploads records", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text("Pending Downloads", fontSize = 11.sp, color = Color(0xFF79747E), fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("$pendingDownloads records", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF6750A4))
+                                }
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text("Last Successful Sync", fontSize = 11.sp, color = Color(0xFF79747E), fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(formattedTime, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6750A4))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Control Operations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1D1B20))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { viewModel.triggerSync() },
+                            modifier = Modifier.fillMaxWidth().testTag("force_sync_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Force Bidirectional Sync", fontWeight = FontWeight.Bold)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = {
+                                    viewModel.backupAccount()
+                                    Toast.makeText(context, "Cloud Backup completed!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f).testTag("backup_account_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF625B71))
+                            ) {
+                                Text("Backup Account", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.restoreAccount()
+                                    Toast.makeText(context, "Account restored!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f).testTag("restore_account_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF625B71))
+                            ) {
+                                Text("Restore Account", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.clearCache()
+                                Toast.makeText(context, "AI Cache cleared!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("clear_cache_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE8DEF8), contentColor = Color(0xFF1D192B))
+                        ) {
+                            Text("Clear AI Cache", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.rebuildCache()
+                                Toast.makeText(context, "Syllabus Cache rebuilt!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("rebuild_cache_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE8DEF8), contentColor = Color(0xFF1D192B))
+                        ) {
+                            Text("Rebuild Cache", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.resetLocalDatabase()
+                                Toast.makeText(context, "Local Database reset!", Toast.LENGTH_LONG).show()
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("reset_db_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFBA1A1A), contentColor = Color.White)
+                        ) {
+                            Text("Reset Local Database (Dangerous)", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -3275,50 +4834,86 @@ enum class AuthScreenMode {
     FORGOT_PASSWORD
 }
 
+enum class ActiveRole {
+    NONE, STUDENT, TEACHER, SCHOOL_ADMIN, SUPER_ADMIN
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PointlyAuthScreen(
     viewModel: PointlyViewModel,
     modifier: Modifier = Modifier
 ) {
-    var mode by remember { mutableStateOf(AuthScreenMode.LOGIN) }
+    val coroutineScope = rememberCoroutineScope()
+    var activeRole by remember { mutableStateOf(ActiveRole.NONE) }
+    var authMode by remember { mutableStateOf(AuthScreenMode.LOGIN) }
     val authUiState by viewModel.authUiState.collectAsStateWithLifecycle()
 
     // Remember Me
     var rememberMe by remember { mutableStateOf(true) }
 
-    // Login Fields
+    // Input Fields
     var userId by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // On setup, load remembered User ID if present
+    // Register Fields
+    var regName by remember { mutableStateOf("") }
+    var regUsername by remember { mutableStateOf("") }
+    var regPassword by remember { mutableStateOf("") }
+    var regPasswordVisible by remember { mutableStateOf(false) }
+    var regConfirmPassword by remember { mutableStateOf("") }
+    var regConfirmPasswordVisible by remember { mutableStateOf(false) }
+    var regClass by remember { mutableStateOf("") }
+    var regSection by remember { mutableStateOf("") }
+    var regProfileSeed by remember { mutableStateOf("Quest") }
+
+    // Forgot Password Fields
+    var forgotUsername by remember { mutableStateOf("") }
+
+    // School Selector State
+    var schoolsList by remember { mutableStateOf<List<SchoolDocument>>(emptyList()) }
+    var selectedSchool by remember { mutableStateOf<SchoolDocument?>(null) }
+    var recentSchools by remember { mutableStateOf<List<SchoolDocument>>(emptyList()) }
+    var showSchoolSelector by remember { mutableStateOf(false) }
+    var registerStep by remember { mutableStateOf(1) } // 1: School, 2: Class/Section, 3: Details
+
+    // Local Validation Errors
+    var validationError by remember { mutableStateOf<String?>(null) }
+
+    // Load dynamic list of schools on startup
     LaunchedEffect(Unit) {
+        try {
+            val snapshot = viewModel.firestoreRepository.db.collection("schools").get().await()
+            schoolsList = snapshot.documents.mapNotNull { doc ->
+                doc.toObject(SchoolDocument::class.java)?.copy(id = doc.id)
+            }
+            if (schoolsList.isEmpty()) {
+                val seedSchool = SchoolDocument(
+                    id = "bento_school",
+                    name = "Bento International School",
+                    organizationId = "ORG-777",
+                    board = "CBSE",
+                    academicYear = "2026-2027",
+                    city = "Antigravity Sector",
+                    classes = listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10"),
+                    sections = listOf("A", "B", "C"),
+                    address = "77 Slate Bento Avenue, Antigravity Sector"
+                )
+                viewModel.firestoreRepository.db.collection("schools").document("bento_school").set(seedSchool).await()
+                schoolsList = listOf(seedSchool)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // On setup, load remembered User ID if present
         val remembered = viewModel.getRememberedUser()
         if (remembered.isNotEmpty()) {
             userId = remembered
             rememberMe = true
         }
     }
-
-    // Register Fields
-    var regName by remember { mutableStateOf("") }
-    var regUsername by remember { mutableStateOf("") }
-    var regEmail by remember { mutableStateOf("") }
-    var regPassword by remember { mutableStateOf("") }
-    var regPasswordVisible by remember { mutableStateOf(false) }
-    var regClass by remember { mutableStateOf("") }
-    var regSection by remember { mutableStateOf("") }
-
-    // Username Availability check
-    val isUsernameAvailable by viewModel.isUsernameAvailable.collectAsStateWithLifecycle()
-    val isCheckingUsername by viewModel.isCheckingUsername.collectAsStateWithLifecycle()
-
-    // Forgot Password Fields
-    var forgotEmail by remember { mutableStateOf("") }
-
-    // Local Validation Errors
-    var validationError by remember { mutableStateOf<String?>(null) }
 
     val textFieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -3334,6 +4929,22 @@ fun PointlyAuthScreen(
         errorLabelColor = MaterialTheme.colorScheme.error,
         errorCursorColor = MaterialTheme.colorScheme.error
     )
+
+    if (showSchoolSelector) {
+        SchoolSelectorDialog(
+            schools = schoolsList,
+            recentSchools = recentSchools,
+            onSchoolSelected = { school ->
+                selectedSchool = school
+                showSchoolSelector = false
+                validationError = null
+                if (!recentSchools.any { it.id == school.id }) {
+                    recentSchools = (listOf(school) + recentSchools).take(3)
+                }
+            },
+            onDismiss = { showSchoolSelector = false }
+        )
+    }
 
     Box(
         modifier = modifier
@@ -3386,398 +4997,908 @@ fun PointlyAuthScreen(
                 }
             }
 
-            // Central Bento-Inspired Auth Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            ) {
+            if (activeRole == ActiveRole.NONE) {
+                // PHASE 1: Role Welcome Selection Screen
+                Text(
+                    text = "Welcome to Pointly",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Select your gateway card to access the learning dimension.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Bento 2x2 Grid of Role Selection Cards
                 Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // MODE HEADER
-                    val titleText = when (mode) {
-                        AuthScreenMode.LOGIN -> "Initiate Session"
-                        AuthScreenMode.REGISTER -> "Create Student Profile"
-                        AuthScreenMode.FORGOT_PASSWORD -> "Recover Magical Key"
-                    }
-                    val subtitleText = when (mode) {
-                        AuthScreenMode.LOGIN -> "Access your learning progression, streak, and missions."
-                        AuthScreenMode.REGISTER -> "Begin your journey to claim epic achievements and study wisdom."
-                        AuthScreenMode.FORGOT_PASSWORD -> "Enter your email address to receive password recovery spell."
-                    }
-
-                    Text(
-                        text = titleText,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = subtitleText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Local Error feedback or Firestore errors
-                    validationError?.let {
-                        Text(
-                            text = "⚠ $it",
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        BentoRoleCard(
+                            title = "Student Quest",
+                            emoji = "👨🎓",
+                            description = "Claim achievements, complete quests & earn real XP rewards.",
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.STUDENT
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                        BentoRoleCard(
+                            title = "Teacher Sanctum",
+                            emoji = "👨🏫",
+                            description = "Assign quests, review analytics & guide students' paths.",
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.TEACHER
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
                         )
                     }
 
-                    // INPUT FIELDS BASED ON SELECTED MODE
-                    when (mode) {
-                        AuthScreenMode.LOGIN -> {
-                            OutlinedTextField(
-                                value = userId,
-                                onValueChange = {
-                                    userId = it
-                                    validationError = null
-                                },
-                                label = { Text("User ID (Username)") },
-                                leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("login_email_input"),
-                                colors = textFieldColors
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        BentoRoleCard(
+                            title = "School Admin",
+                            emoji = "🏫",
+                            description = "Configure rosters, manage parameters & view local analytics.",
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.SCHOOL_ADMIN
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                        BentoRoleCard(
+                            title = "Super Admin",
+                            emoji = "👑",
+                            description = "Global oversight, platform controls, settings & school setup.",
+                            color = Color(0xFFFFECEF).copy(alpha = 0.95f),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                activeRole = ActiveRole.SUPER_ADMIN
+                                authMode = AuthScreenMode.LOGIN
+                                validationError = null
+                                selectedSchool = null
+                            }
+                        )
+                    }
+                }
+            } else {
+                // Dedicated Authentication Flow for Selected Role
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // Role-Specific Sub-Header
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val roleEmoji = when (activeRole) {
+                                ActiveRole.STUDENT -> "👨🎓"
+                                ActiveRole.TEACHER -> "👨🏫"
+                                ActiveRole.SCHOOL_ADMIN -> "🏫"
+                                ActiveRole.SUPER_ADMIN -> "👑"
+                                else -> ""
+                            }
+                            Text(
+                                text = roleEmoji,
+                                fontSize = 24.sp
                             )
-
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = {
-                                    password = it
-                                    validationError = null
+                            Text(
+                                text = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student Portal"
+                                    ActiveRole.TEACHER -> "Teacher Sanctum"
+                                    ActiveRole.SCHOOL_ADMIN -> "School Admin Hub"
+                                    ActiveRole.SUPER_ADMIN -> "Core Super Admin"
+                                    else -> ""
                                 },
-                                label = { Text("Secret Password") },
-                                leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                trailingIcon = {
-                                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                        Icon(
-                                            imageVector = if (passwordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                            contentDescription = "Toggle password visibility",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("login_password_input"),
-                                colors = textFieldColors
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary
                             )
-
-                            // Remember Me Checkbox
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = rememberMe,
-                                    onCheckedChange = { rememberMe = it },
-                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Remember Me",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        validationError = null
-                                        mode = AuthScreenMode.FORGOT_PASSWORD
-                                    },
-                                    modifier = Modifier.testTag("switch_to_forgot_password_button")
-                                ) {
-                                    Text("Forgot Password?", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    if (userId.trim().length < 3) {
-                                        validationError = "Please enter a valid User ID."
-                                    } else if (password.length < 6) {
-                                        validationError = "Password must be at least 6 characters."
-                                    } else {
-                                        validationError = null
-                                        viewModel.loginWithUserId(userId.trim(), password, rememberMe)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("login_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (authUiState is AuthUiState.Loading) {
-                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text("Login to Sanctuary", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                                }
-                            }
                         }
 
-                        AuthScreenMode.REGISTER -> {
-                            OutlinedTextField(
-                                value = regName,
-                                onValueChange = { regName = it; validationError = null },
-                                label = { Text("Full Name") },
-                                leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("register_name_input"),
-                                colors = textFieldColors
-                            )
+                        val titleText = when (authMode) {
+                            AuthScreenMode.LOGIN -> "Access Session"
+                            AuthScreenMode.REGISTER -> "Create Student Profile"
+                            AuthScreenMode.FORGOT_PASSWORD -> "Recover Magical Key"
+                        }
+                        val subtitleText = when (authMode) {
+                            AuthScreenMode.LOGIN -> "Log in with your custom details below."
+                            AuthScreenMode.REGISTER -> "Register a new student account below."
+                            AuthScreenMode.FORGOT_PASSWORD -> "Recover your account credentials securely."
+                        }
 
-                            OutlinedTextField(
-                                value = regUsername,
-                                onValueChange = {
-                                    regUsername = it
-                                    validationError = null
-                                    viewModel.checkUsernameAvailability(it)
-                                },
-                                label = { Text("Unique Username") },
-                                leadingIcon = { Icon(Icons.Rounded.AccountBox, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("register_username_input"),
-                                colors = textFieldColors
-                            )
+                        Text(
+                            text = titleText,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
 
-                            // Username availability helper text
-                            if (regUsername.trim().length >= 3) {
+                        validationError?.let {
+                            Text(
+                                text = "⚠ $it",
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        when (authMode) {
+                            AuthScreenMode.LOGIN -> {
+                                // School Selector button (if NOT Super Admin)
+                                if (activeRole != ActiveRole.SUPER_ADMIN) {
+                                    Button(
+                                        onClick = { showSchoolSelector = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = selectedSchool?.name ?: "Select Your School *",
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(Icons.Rounded.Search, contentDescription = null)
+                                        }
+                                    }
+                                }
+
+                                // User ID (Username)
+                                val labelText = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student User ID *"
+                                    ActiveRole.TEACHER -> "Teacher ID (Username) *"
+                                    ActiveRole.SCHOOL_ADMIN -> "Admin ID (Username) *"
+                                    ActiveRole.SUPER_ADMIN -> "Super Admin ID *"
+                                    else -> "User ID *"
+                                }
+                                OutlinedTextField(
+                                    value = userId,
+                                    onValueChange = { userId = it; validationError = null },
+                                    label = { Text(labelText) },
+                                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("login_email_input"),
+                                    colors = textFieldColors
+                                )
+
+                                // Password
+                                OutlinedTextField(
+                                    value = password,
+                                    onValueChange = { password = it; validationError = null },
+                                    label = { Text("Secret Password *") },
+                                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().testTag("login_password_input"),
+                                    colors = textFieldColors
+                                )
+
+                                // Remember me & Forgot Password spell
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (isCheckingUsername) {
-                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Checking availability...", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = rememberMe,
+                                            onCheckedChange = { rememberMe = it },
+                                            modifier = Modifier.testTag("remember_me_checkbox")
+                                        )
+                                        Text("Remember Me", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            validationError = null
+                                            authMode = AuthScreenMode.FORGOT_PASSWORD
+                                        },
+                                        modifier = Modifier.testTag("forgot_password_button")
+                                    ) {
+                                        Text("Forgot Key?", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                // Submit Session Button
+                                Button(
+                                    onClick = {
+                                        if (activeRole != ActiveRole.SUPER_ADMIN && selectedSchool == null) {
+                                            validationError = "School Selection is required."
+                                        } else if (userId.isBlank()) {
+                                            validationError = "User ID is required."
+                                        } else if (password.isBlank()) {
+                                            validationError = "Password is required."
+                                        } else {
+                                            validationError = null
+                                            if (activeRole == ActiveRole.SUPER_ADMIN) {
+                                                // Handle Super Admin Auth / Dynamic Seeding if needed
+                                                coroutineScope.launch {
+                                                    val cleanUserId = userId.trim()
+                                                    val lowercaseId = cleanUserId.lowercase()
+                                                    val querySnapshot = viewModel.firestoreRepository.db.collection("users")
+                                                        .whereEqualTo("username", lowercaseId)
+                                                        .get()
+                                                        .await()
+                                                    if (querySnapshot.isEmpty && (lowercaseId == "superadmin" || lowercaseId == "sk@77")) {
+                                                        // Automatically Seed Super Admin account dynamically!
+                                                        viewModel.signUpWithUserId(
+                                                            username = lowercaseId,
+                                                            password = password,
+                                                            fullName = if (lowercaseId == "sk@77") "SK Super Admin" else "Pointly Platform Owner",
+                                                            className = "",
+                                                            section = "",
+                                                            school = "Platform Headquarters",
+                                                            profileImage = "https://api.dicebear.com/7.x/adventurer/svg?seed=$lowercaseId",
+                                                            isAdmin = true,
+                                                            adminId = lowercaseId,
+                                                            organizationId = "SUPER-ADMIN",
+                                                            adminRole = "Super Admin"
+                                                        )
+                                                    } else {
+                                                        viewModel.loginWithUserId(
+                                                            username = cleanUserId,
+                                                            password = password,
+                                                            rememberMe = rememberMe,
+                                                            isAdminRequest = true
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                // Authenticate checking matching school & role constraints
+                                                coroutineScope.launch {
+                                                    val q = viewModel.firestoreRepository.db.collection("users")
+                                                        .whereEqualTo("username", userId.trim().lowercase())
+                                                        .get()
+                                                        .await()
+                                                    if (q.isEmpty) {
+                                                        validationError = "User ID not registered."
+                                                    } else {
+                                                        val doc = q.documents.first()
+                                                        val dbSchool = doc.getString("school") ?: ""
+                                                        val dbIsTeacher = doc.getBoolean("isTeacher") ?: false
+                                                        val dbIsAdmin = doc.getBoolean("isAdmin") ?: false
+                                                        val dbAdminRole = doc.getString("adminRole") ?: ""
+
+                                                        val schoolMatch = dbSchool.equals(selectedSchool?.name, ignoreCase = true)
+                                                        val roleMatch = when (activeRole) {
+                                                            ActiveRole.STUDENT -> !dbIsTeacher && !dbIsAdmin
+                                                            ActiveRole.TEACHER -> dbIsTeacher
+                                                            ActiveRole.SCHOOL_ADMIN -> dbIsAdmin && dbAdminRole != "Super Admin"
+                                                            else -> false
+                                                        }
+
+                                                        if (!schoolMatch) {
+                                                            validationError = "This account is registered at a different school: $dbSchool"
+                                                        } else if (!roleMatch) {
+                                                            validationError = "Role mismatch. Account is not registered under this category."
+                                                        } else {
+                                                            viewModel.loginWithUserId(
+                                                                username = userId.trim(),
+                                                                password = password,
+                                                                rememberMe = rememberMe,
+                                                                isTeacherRequest = activeRole == ActiveRole.TEACHER,
+                                                                isAdminRequest = activeRole == ActiveRole.SCHOOL_ADMIN
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("login_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (authUiState is AuthUiState.Loading) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
                                     } else {
-                                        when (isUsernameAvailable) {
-                                            true -> Text("Username is available! ✅", fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                                            false -> Text("Username is already taken! ❌", fontSize = 11.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                                            null -> {}
+                                        Text("Initiate Session", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                }
+                            }
+
+                            AuthScreenMode.REGISTER -> {
+                                if (activeRole != ActiveRole.STUDENT) {
+                                    Text("Registration is not permitted for this role. Account credentials must be added by a School/Super Administrator.", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                } else {
+                                    // STEP 1: SELECT SCHOOL
+                                    if (registerStep == 1) {
+                                        Text("Step 1: Choose Your School", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        Button(
+                                            onClick = { showSchoolSelector = true },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = selectedSchool?.name ?: "Tap to Search School *",
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                Icon(Icons.Rounded.Search, contentDescription = null)
+                                            }
+                                        }
+
+                                        selectedSchool?.let {
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Text("School ID: ${it.id}", fontSize = 11.sp, color = Color.Gray)
+                                                    Text("Board: ${it.board}", fontSize = 11.sp, color = Color.Gray)
+                                                    Text("City: ${it.city}", fontSize = 11.sp, color = Color.Gray)
+                                                }
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (selectedSchool == null) {
+                                                    validationError = "You must select a school to continue."
+                                                } else {
+                                                    validationError = null
+                                                    registerStep = 2
+                                                }
+                                            },
+                                            enabled = selectedSchool != null,
+                                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                                        ) {
+                                            Text("Next: Class Selection")
+                                        }
+                                    }
+
+                                    // STEP 2: SELECT CLASS & SECTION
+                                    if (registerStep == 2) {
+                                        Text("Step 2: Choose Class & Section", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        val availableClasses = selectedSchool?.classes?.ifEmpty { listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10") } ?: listOf("Class 6", "Class 7", "Class 8", "Class 9", "Class 10")
+                                        val availableSections = selectedSchool?.sections?.ifEmpty { listOf("A", "B", "C") } ?: listOf("A", "B", "C")
+
+                                        if (regClass.isEmpty()) regClass = availableClasses.first()
+                                        if (regSection.isEmpty()) regSection = availableSections.first()
+
+                                        Text("Select Class:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            availableClasses.forEach { cls ->
+                                                FilterChip(
+                                                    selected = regClass == cls,
+                                                    onClick = { regClass = cls },
+                                                    label = { Text(cls) }
+                                                )
+                                            }
+                                        }
+
+                                        Text("Select Section:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            availableSections.forEach { sec ->
+                                                FilterChip(
+                                                    selected = regSection == sec,
+                                                    onClick = { regSection = sec },
+                                                    label = { Text("Section $sec") }
+                                                )
+                                            }
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = { registerStep = 1 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Back")
+                                            }
+                                            Button(
+                                                onClick = { registerStep = 3 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Continue")
+                                            }
+                                        }
+                                    }
+
+                                    // STEP 3: ACCOUNT DETAILS
+                                    if (registerStep == 3) {
+                                        Text("Step 3: Enter Details", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                                        
+                                        OutlinedTextField(
+                                            value = regName,
+                                            onValueChange = { regName = it; validationError = null },
+                                            label = { Text("Full Student Name *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regUsername,
+                                            onValueChange = { regUsername = it; validationError = null },
+                                            label = { Text("Desired Student ID (Username) *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regPassword,
+                                            onValueChange = { regPassword = it; validationError = null },
+                                            label = { Text("Set Password *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            trailingIcon = {
+                                                IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
+                                                    Icon(
+                                                        imageVector = if (regPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                        contentDescription = null
+                                                    )
+                                                }
+                                            },
+                                            visualTransformation = if (regPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        OutlinedTextField(
+                                            value = regConfirmPassword,
+                                            onValueChange = { regConfirmPassword = it; validationError = null },
+                                            label = { Text("Confirm Password *") },
+                                            leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                            trailingIcon = {
+                                                IconButton(onClick = { regConfirmPasswordVisible = !regConfirmPasswordVisible }) {
+                                                    Icon(
+                                                        imageVector = if (regConfirmPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                                        contentDescription = null
+                                                    )
+                                                }
+                                            },
+                                            visualTransformation = if (regConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = textFieldColors
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = { registerStep = 2 },
+                                                modifier = Modifier.weight(1f).height(52.dp)
+                                            ) {
+                                                Text("Back")
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    if (regName.isBlank()) {
+                                                        validationError = "Full Name is required."
+                                                    } else if (regUsername.trim().length < 4) {
+                                                        validationError = "Username must be at least 4 characters."
+                                                    } else if (regPassword.length < 6) {
+                                                        validationError = "Password must be at least 6 characters."
+                                                    } else if (regPassword != regConfirmPassword) {
+                                                        validationError = "Passwords do not match."
+                                                    } else {
+                                                        validationError = null
+                                                        val avatarUrl = "https://api.dicebear.com/7.x/adventurer/svg?seed=$regProfileSeed"
+                                                        viewModel.signUpWithUserId(
+                                                            username = regUsername.lowercase().trim(),
+                                                            password = regPassword,
+                                                            fullName = regName.trim(),
+                                                            className = regClass.trim(),
+                                                            section = regSection.trim(),
+                                                            school = selectedSchool?.name ?: "Bento International School",
+                                                            profileImage = avatarUrl
+                                                        )
+                                                    }
+                                                },
+                                                modifier = Modifier.weight(1f).height(52.dp).testTag("register_button"),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                            ) {
+                                                if (authUiState is AuthUiState.Loading) {
+                                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                                                } else {
+                                                    Text("Create Account")
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
 
-                            OutlinedTextField(
-                                value = regEmail,
-                                onValueChange = { regEmail = it; validationError = null },
-                                label = { Text("School/Personal Email") },
-                                leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("register_email_input"),
-                                colors = textFieldColors
-                            )
-
-                            OutlinedTextField(
-                                value = regPassword,
-                                onValueChange = { regPassword = it; validationError = null },
-                                label = { Text("Secure Password (Min 6 Chars)") },
-                                leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                trailingIcon = {
-                                    IconButton(onClick = { regPasswordVisible = !regPasswordVisible }) {
-                                        Icon(
-                                            imageVector = if (regPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                            contentDescription = "Toggle password visibility",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                            AuthScreenMode.FORGOT_PASSWORD -> {
+                                if (activeRole != ActiveRole.SUPER_ADMIN) {
+                                    Button(
+                                        onClick = { showSchoolSelector = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().height(52.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Rounded.School, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = selectedSchool?.name ?: "Select Your School *",
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(Icons.Rounded.Search, contentDescription = null)
+                                        }
                                     }
-                                },
-                                visualTransformation = if (regPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("register_password_input"),
-                                colors = textFieldColors
-                            )
+                                }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
+                                val forgotLabel = when (activeRole) {
+                                    ActiveRole.STUDENT -> "Student User ID"
+                                    ActiveRole.TEACHER -> "Teacher ID"
+                                    ActiveRole.SCHOOL_ADMIN -> "School Admin ID"
+                                    ActiveRole.SUPER_ADMIN -> "Super Admin ID"
+                                    else -> "User ID"
+                                }
                                 OutlinedTextField(
-                                    value = regClass,
-                                    onValueChange = { regClass = it; validationError = null },
-                                    label = { Text("Class") },
+                                    value = forgotUsername,
+                                    onValueChange = { forgotUsername = it; validationError = null },
+                                    label = { Text(forgotLabel) },
+                                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("register_class_input"),
+                                    modifier = Modifier.fillMaxWidth().testTag("forgot_username_input"),
                                     colors = textFieldColors
                                 )
 
-                                OutlinedTextField(
-                                    value = regSection,
-                                    onValueChange = { regSection = it; validationError = null },
-                                    label = { Text("Section") },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("register_section_input"),
-                                    colors = textFieldColors
-                                )
-                            }
+                                Spacer(modifier = Modifier.height(10.dp))
 
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Button(
-                                onClick = {
-                                    if (regName.isBlank()) {
-                                        validationError = "Name cannot be empty."
-                                    } else if (regUsername.length < 3) {
-                                        validationError = "Username must be at least 3 characters."
-                                    } else if (isUsernameAvailable == false) {
-                                        validationError = "The chosen username is already taken."
-                                    } else if (!regEmail.contains("@")) {
-                                        validationError = "Please enter a valid email address."
-                                    } else if (regPassword.length < 6) {
-                                        validationError = "Password must be at least 6 characters."
-                                    } else if (regClass.isBlank() || regSection.isBlank()) {
-                                        validationError = "Class and Section fields are required."
+                                Button(
+                                    onClick = {
+                                        if (activeRole != ActiveRole.SUPER_ADMIN && selectedSchool == null) {
+                                            validationError = "Please select your school."
+                                        } else if (forgotUsername.trim().length < 4) {
+                                            validationError = "Please enter a valid User ID."
+                                        } else {
+                                            validationError = null
+                                            viewModel.resetPasswordByUsername(forgotUsername.trim(), selectedSchool?.name)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("forgot_password_button"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (authUiState is AuthUiState.Loading) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
                                     } else {
-                                        validationError = null
-                                        viewModel.signUpWithEmail(
-                                            email = regEmail.trim(),
-                                            password = regPassword,
-                                            name = regName.trim(),
-                                            username = regUsername.trim(),
-                                            className = regClass.trim(),
-                                            section = regSection.trim()
-                                        )
+                                        Text("Recover Key", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                                     }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("register_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (authUiState is AuthUiState.Loading) {
-                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text("Begin Student Quest", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                                 }
-                            }
-                        }
 
-                        AuthScreenMode.FORGOT_PASSWORD -> {
-                            OutlinedTextField(
-                                value = forgotEmail,
-                                onValueChange = { forgotEmail = it; validationError = null },
-                                label = { Text("Your Email Address") },
-                                leadingIcon = { Icon(Icons.Rounded.Email, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("forgot_email_input"),
-                                colors = textFieldColors
-                            )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Button(
-                                onClick = {
-                                    if (!forgotEmail.contains("@")) {
-                                        validationError = "Please enter a valid email address."
-                                    } else {
+                                TextButton(
+                                    onClick = {
                                         validationError = null
-                                        viewModel.resetPassword(forgotEmail.trim())
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                                    .testTag("forgot_password_button"),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (authUiState is AuthUiState.Loading) {
-                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text("Summon Password Spell", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                        authMode = AuthScreenMode.LOGIN
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Back to Login", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                                 }
-                            }
-
-                            TextButton(
-                                onClick = {
-                                    validationError = null
-                                    mode = AuthScreenMode.LOGIN
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Back to Login", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
-            }
 
-            // MODE SWITCHING FOOTER
-            if (mode != AuthScreenMode.FORGOT_PASSWORD) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
+                // Footers: Back & Switch Modes
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val promptText = if (mode == AuthScreenMode.LOGIN) "New Student?" else "Already registered?"
-                    val actionText = if (mode == AuthScreenMode.LOGIN) "Create profile" else "Login instead"
+                    if (activeRole == ActiveRole.STUDENT && authMode != AuthScreenMode.FORGOT_PASSWORD) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val promptText = if (authMode == AuthScreenMode.LOGIN) "New Student?" else "Already registered?"
+                            val actionText = if (authMode == AuthScreenMode.LOGIN) "Create profile" else "Login instead"
 
-                    Text(promptText, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(modifier = Modifier.width(4.dp))
+                            Text(promptText, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = {
+                                    validationError = null
+                                    registerStep = 1
+                                    authMode = if (authMode == AuthScreenMode.LOGIN) AuthScreenMode.REGISTER else AuthScreenMode.LOGIN
+                                },
+                                modifier = Modifier.testTag(if (authMode == AuthScreenMode.LOGIN) "switch_to_register_button" else "switch_to_login_button")
+                            ) {
+                                Text(actionText, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+                    }
+
                     TextButton(
                         onClick = {
+                            activeRole = ActiveRole.NONE
+                            authMode = AuthScreenMode.LOGIN
                             validationError = null
-                            mode = if (mode == AuthScreenMode.LOGIN) AuthScreenMode.REGISTER else AuthScreenMode.LOGIN
+                            selectedSchool = null
                         },
-                        modifier = Modifier.testTag(if (mode == AuthScreenMode.LOGIN) "switch_to_register_button" else "switch_to_login_button")
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(actionText, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Back to Role Selection", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SchoolSelectorDialog(
+    schools: List<SchoolDocument>,
+    recentSchools: List<SchoolDocument>,
+    onSchoolSelected: (SchoolDocument) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredSchools = schools.filter {
+        it.name.contains(searchQuery, ignoreCase = true) ||
+        it.city.contains(searchQuery, ignoreCase = true) ||
+        it.board.contains(searchQuery, ignoreCase = true)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Select School", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search by name, city, board...") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().height(320.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (recentSchools.isNotEmpty() && searchQuery.isEmpty()) {
+                    Text("Recent Selections", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    recentSchools.forEach { school ->
+                        Card(
+                            onClick = { onSchoolSelected(school) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(school.name, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                Text("Available Schools", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (filteredSchools.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No schools found.", color = Color.Gray, fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(filteredSchools) { school ->
+                                Card(
+                                    onClick = { onSchoolSelected(school) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.primary),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                school.name.take(2).uppercase(),
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(school.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(school.board, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                                Text("•", fontSize = 10.sp, color = Color.Gray)
+                                                Text(school.city.ifEmpty { "Antigravity" }, fontSize = 10.sp, color = Color.Gray)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss")
+            }
+        }
+    )
+}
+
+@Composable
+fun BentoRoleCard(
+    title: String,
+    emoji: String,
+    description: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = color),
+        border = BorderStroke(1.5.dp, Color.Black),
+        modifier = modifier.height(160.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(emoji, fontSize = 28.sp)
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.Black.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp,
+                    color = Color.Black
+                )
+                Text(
+                    text = description,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    color = Color.Black.copy(alpha = 0.7f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 
 @Composable
 fun PointlyVerificationScreen(
@@ -4450,8 +6571,13 @@ fun FocusZoneOverlay(
             shape = RoundedCornerShape(100.dp),
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = "Search history") },
             colors = OutlinedTextFieldDefaults.colors(
-                unfocusedContainerColor = Color.White,
-                focusedContainerColor = Color.White
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                cursorColor = MaterialTheme.colorScheme.primary
             ),
             modifier = Modifier
                 .fillMaxWidth()

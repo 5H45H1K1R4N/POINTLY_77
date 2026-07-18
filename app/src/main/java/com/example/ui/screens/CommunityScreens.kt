@@ -33,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.database.RoomFeedItemEntity
 import com.example.data.database.RoomMessageEntity
 import com.example.data.database.RoomShowcasePostEntity
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.example.data.database.RoomSquadEntity
 import com.example.ui.viewmodel.PointlyViewModel
 import kotlinx.coroutines.delay
@@ -120,7 +122,7 @@ fun ChatRoomView(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFFEF7FF)),
+            .background(Color.Transparent),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         // Channels Selector
@@ -587,24 +589,40 @@ fun ShowcasePostCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp)
+                    .height(200.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFFF3EDF7)),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val icon = when (post.category.lowercase()) {
-                        "drawing" -> Icons.Rounded.Brush
-                        "science project" -> Icons.Rounded.Science
-                        "coding project" -> Icons.Rounded.Code
-                        "certificate" -> Icons.Rounded.WorkspacePremium
-                        "pdf" -> Icons.Rounded.PictureAsPdf
-                        else -> Icons.Rounded.Attachment
+                var isImageLoadFailed by remember { mutableStateOf(false) }
+
+                if (!isImageLoadFailed && post.fileUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = post.fileUrl,
+                        contentDescription = "Showcase attachment preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        onError = {
+                            isImageLoadFailed = true
+                        }
+                    )
+                }
+
+                if (isImageLoadFailed || post.fileUrl.isBlank()) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                        val icon = when (post.category.lowercase()) {
+                            "drawing" -> Icons.Rounded.Brush
+                            "science project" -> Icons.Rounded.Science
+                            "coding project" -> Icons.Rounded.Code
+                            "certificate" -> Icons.Rounded.WorkspacePremium
+                            "pdf" -> Icons.Rounded.PictureAsPdf
+                            else -> Icons.Rounded.Attachment
+                        }
+                        Icon(icon, contentDescription = "Category icon", modifier = Modifier.size(40.dp), tint = Color(0xFF6750A4))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Attachment: ${post.category}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF49454F))
+                        Text(post.fileUrl.take(40) + "...", fontSize = 10.sp, color = Color.Gray)
                     }
-                    Icon(icon, contentDescription = "Category icon", modifier = Modifier.size(40.dp), tint = Color(0xFF6750A4))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Attachment: ${post.category}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF49454F))
-                    Text(post.fileUrl.take(40) + "...", fontSize = 10.sp, color = Color.Gray)
                 }
             }
 
@@ -746,6 +764,36 @@ fun UploadShowcaseDialog(
                     Icon(Icons.Rounded.UploadFile, contentDescription = "Attach file")
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(if (selectedFileUri != null) "File Attached! ✅" else "Attach Project File")
+                }
+
+                if (selectedFileUri != null) {
+                    Text("Attachment Preview:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFE8DEF8).copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        var isPreviewFailed by remember { mutableStateOf(false) }
+                        if (!isPreviewFailed) {
+                            AsyncImage(
+                                model = selectedFileUri,
+                                contentDescription = "Selected image preview",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                                onError = { isPreviewFailed = true }
+                            )
+                        }
+                        if (isPreviewFailed) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF6750A4), modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Attached non-image or file URI", fontSize = 11.sp, color = Color.Gray)
+                            }
+                        }
+                    }
                 }
             }
         },

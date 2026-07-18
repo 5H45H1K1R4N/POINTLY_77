@@ -29,6 +29,16 @@ data class UserDocument(
     val studyMinutes: Int = 0,
     val quizAccuracy: Int = 0,
     val quizStats: Map<String, Int> = emptyMap(),
+    val isTeacher: Boolean = false,
+    val employeeId: String = "",
+    val subjects: String = "",
+    val classesAssigned: String = "",
+    val sectionsAssigned: String = "",
+    val isAdmin: Boolean = false,
+    val adminId: String = "",
+    val organizationId: String = "",
+    val permissions: String = "",
+    val adminRole: String = "",
     val createdAt: Any? = System.currentTimeMillis(),
     val updatedAt: Any? = System.currentTimeMillis()
 ) {
